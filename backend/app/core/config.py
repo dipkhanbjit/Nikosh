@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     debug: bool = False
     api_prefix: str = "/api/v1"
     log_level: str = "INFO"
+    database_url: str = "postgresql+psycopg://nikosh:nikosh@localhost:5432/nikosh"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
