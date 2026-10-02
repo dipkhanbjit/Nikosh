@@ -1,0 +1,50 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime / private data
+uploads/
+cvs/
+candidate_data/
+transcripts/
+recordings/
+temp/
+
+# Database dumps
+*.dump
+*.backup
+dumps/
+
+# AI / model cache
+model_cache/
+.cache/
+
+# Certificates / private keys
+*.pem
+*.key
+*.crt
