@@ -1,4 +1,8 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+
+import { apiRequest } from "../api/client";
+import { Button } from "../components/ui";
+import { clearUser, getUser } from "../utils/auth";
 
 const navItems = [
   { to: "/", label: "Dashboard", end: true },
@@ -10,6 +14,15 @@ const navItems = [
 ];
 
 export default function AppLayout() {
+  const navigate = useNavigate();
+  const user = getUser();
+
+  async function handleLogout() {
+    await apiRequest("/auth/logout", { method: "POST" }).catch(() => {});
+    clearUser();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-900">
       <aside className="w-60 shrink-0 border-r border-gray-200 bg-white">
@@ -22,9 +35,7 @@ export default function AppLayout() {
               end={item.end}
               className={({ isActive }) =>
                 `rounded-md px-3 py-2 text-sm font-medium ${
-                  isActive
-                    ? "bg-indigo-50 text-indigo-700"
-                    : "text-gray-600 hover:bg-gray-100"
+                  isActive ? "bg-indigo-50 text-indigo-700" : "text-gray-600 hover:bg-gray-100"
                 }`
               }
             >
@@ -36,12 +47,15 @@ export default function AppLayout() {
 
       <div className="flex flex-1 flex-col">
         <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
-          <span className="text-sm text-gray-500">
-            AI Recruitment & Interview Intelligence
-          </span>
-          <NavLink to="/login" className="text-sm font-medium text-indigo-600">
-            Login
-          </NavLink>
+          <span className="text-sm text-gray-500">AI Recruitment & Interview Intelligence</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">
+              {user.full_name} ({user.role})
+            </span>
+            <Button variant="secondary" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
         </header>
         <main className="flex-1 p-6">
           <Outlet />
