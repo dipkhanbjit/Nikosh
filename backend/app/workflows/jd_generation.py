@@ -9,6 +9,7 @@ from langgraph.types import Command, interrupt
 from app.core.database import SessionLocal
 from app.models import Job
 from app.schemas.jd import JDDraft
+from app.services.job_posting import publish_job
 from app.services.knowledge_base import search
 from app.services.llm import get_llm
 from app.workflows.checkpointer import get_checkpointer
@@ -118,6 +119,16 @@ def save(state: JDGraphState) -> dict:
     return {"messages": [{"role": "assistant", "content": "JD approved and saved to the job."}]}
 
 
+def post_jd(state: JDGraphState) -> dict:
+    with SessionLocal() as db:
+        job = db.get(Job, state["job_id"])
+        if publish_job(db, job):
+            content = f"JD posted: {job.posted_url}"
+        else:
+            content = f"JD saved, but posting failed: {job.posting_error}"
+    return {"messages": [{"role": "assistant", "content": content}]}
+
+
 @lru_cache
 def get_jd_graph():
     builder = StateGraph(JDGraphState)
@@ -125,8 +136,10 @@ def get_jd_graph():
     builder.add_node("draft", draft)
     builder.add_node("review", review)
     builder.add_node("save", save)
+    builder.add_node("post_jd", post_jd)
     builder.add_edge(START, "retrieve")
     builder.add_edge("retrieve", "draft")
     builder.add_edge("draft", "review")
-    builder.add_edge("save", END)
+    builder.add_edge("save", "post_jd")
+    builder.add_edge("post_jd", END)
     return builder.compile(checkpointer=get_checkpointer())

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     kb_chunk_overlap: int = 150
     kb_max_file_mb: int = 10
     tesseract_cmd: str | None = None
+    telegram_bot_token: str = ""
+    telegram_channel: str = ""
 
 
 @lru_cache

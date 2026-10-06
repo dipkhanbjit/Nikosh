@@ -22,6 +22,7 @@ export const getJob = (id) => apiRequest(`/jobs/${id}`);
 export const createJob = (body) => apiRequest("/jobs", { method: "POST", body });
 export const updateJob = (id, body) => apiRequest(`/jobs/${id}`, { method: "PATCH", body });
 export const deleteJob = (id) => apiRequest(`/jobs/${id}`, { method: "DELETE" });
+export const postJob = (id) => apiRequest(`/jobs/${id}/post`, { method: "POST" });
 
 export const getJD = (id) => apiRequest(`/jobs/${id}/jd`);
 export const generateJD = (id, prompt) =>
