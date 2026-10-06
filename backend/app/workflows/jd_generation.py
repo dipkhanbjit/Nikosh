@@ -9,9 +9,9 @@ from langgraph.types import Command, interrupt
 from app.core.database import SessionLocal
 from app.models import Job
 from app.schemas.jd import JDDraft
+from app.services.job_posting import publish_job
 from app.services.knowledge_base import search
 from app.services.llm import get_llm
-from app.services.telegram import PostingError, post_job
 from app.workflows.checkpointer import get_checkpointer
 
 SYSTEM_PROMPT = """You are an HR assistant writing job descriptions for the company.
@@ -122,16 +122,11 @@ def save(state: JDGraphState) -> dict:
 def post_jd(state: JDGraphState) -> dict:
     with SessionLocal() as db:
         job = db.get(Job, state["job_id"])
-        try:
-            url = post_job(job.title, job.description)
-        except PostingError as exc:
-            return {"messages": [{
-                "role": "assistant",
-                "content": f"JD saved, but posting failed: {exc}",
-            }]}
-        job.status = "posted"
-        db.commit()
-    return {"messages": [{"role": "assistant", "content": f"JD posted: {url}"}]}
+        if publish_job(db, job):
+            content = f"JD posted: {job.posted_url}"
+        else:
+            content = f"JD saved, but posting failed: {job.posting_error}"
+    return {"messages": [{"role": "assistant", "content": content}]}
 
 
 @lru_cache

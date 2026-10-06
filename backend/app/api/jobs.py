@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Job, User
 from app.schemas.job import JobCreate, JobOut, JobUpdate
+from app.services.job_posting import publish_job
 from app.services.storage import delete_file
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -61,3 +62,13 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     db.commit()
     for path in cv_paths:
         delete_file(path)
+
+
+@router.post("/{job_id}/post", response_model=JobOut, dependencies=[Depends(interviewer_only)])
+def post_job_now(job_id: int, db: Session = Depends(get_db)):
+    job = get_job_or_404(db, job_id)
+    if job.status != "approved":
+        raise AppException("Only approved jobs can be posted", 409, "JOB_NOT_APPROVED")
+    publish_job(db, job)
+    db.refresh(job)
+    return job

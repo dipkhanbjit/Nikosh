@@ -47,6 +47,9 @@ class JobOut(BaseModel):
     description: str | None
     requirements: list[Requirement]
     status: str
+    posted_url: str | None
+    posted_at: datetime | None
+    posting_error: str | None
     created_by: int
     created_at: datetime
     updated_at: datetime
