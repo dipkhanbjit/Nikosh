@@ -20,8 +20,11 @@ services:
     env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql+psycopg://nikosh:nikosh@db:5432/nikosh
+      TESSERACT_CMD: ""
     ports:
       - "8000:8000"
+    volumes:
+      - fastembed_cache:/app/.cache/fastembed
     depends_on:
       db:
         condition: service_healthy
@@ -38,3 +41,5 @@ services:
 volumes:
   pgdata:
     name: nikosh_pgdata
+  fastembed_cache:
+    name: nikosh_fastembed_cache
