@@ -48,3 +48,5 @@ model_cache/
 *.pem
 *.key
 *.crt
+
+.cache/
