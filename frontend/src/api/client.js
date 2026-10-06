@@ -1,10 +1,11 @@
 import { clearUser, getUser } from "../utils/auth";
 
 export async function apiRequest(path, { method = "GET", body } = {}) {
+  const isForm = body instanceof FormData;
   const response = await fetch(`/api/v1${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: isForm ? undefined : { "Content-Type": "application/json" },
+    body: isForm ? body : body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json().catch(() => null);
 
