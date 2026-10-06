@@ -4,18 +4,27 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     app_name: str = "Nikosh"
     app_env: str = "development"
     debug: bool = False
     api_prefix: str = "/api/v1"
     log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://nikosh:nikosh@localhost:5432/nikosh"
-    gemini_api_key: str = "AQ.Ab8RN6KYstu5cLfc04pieZfNhv0olQo9Nes119fRy3yz8E50tg"
+    gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
-    jwt_secret_key: str = "khan"
+    jwt_secret_key: str = ""
     jwt_expire_minutes: int = 480
     cookie_secure: bool = False
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
+    embedding_cache_dir: str = ".cache/fastembed"
+    kb_chunk_size: int = 800
+    kb_chunk_overlap: int = 150
+    kb_max_file_mb: int = 10
+    tesseract_cmd: str | None = None
 
 
 @lru_cache
