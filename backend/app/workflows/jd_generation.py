@@ -11,6 +11,7 @@ from app.models import Job
 from app.schemas.jd import JDDraft
 from app.services.knowledge_base import search
 from app.services.llm import get_llm
+from app.services.telegram import PostingError, post_job
 from app.workflows.checkpointer import get_checkpointer
 
 SYSTEM_PROMPT = """You are an HR assistant writing job descriptions for the company.
@@ -118,6 +119,21 @@ def save(state: JDGraphState) -> dict:
     return {"messages": [{"role": "assistant", "content": "JD approved and saved to the job."}]}
 
 
+def post_jd(state: JDGraphState) -> dict:
+    with SessionLocal() as db:
+        job = db.get(Job, state["job_id"])
+        try:
+            url = post_job(job.title, job.description)
+        except PostingError as exc:
+            return {"messages": [{
+                "role": "assistant",
+                "content": f"JD saved, but posting failed: {exc}",
+            }]}
+        job.status = "posted"
+        db.commit()
+    return {"messages": [{"role": "assistant", "content": f"JD posted: {url}"}]}
+
+
 @lru_cache
 def get_jd_graph():
     builder = StateGraph(JDGraphState)
@@ -125,8 +141,10 @@ def get_jd_graph():
     builder.add_node("draft", draft)
     builder.add_node("review", review)
     builder.add_node("save", save)
+    builder.add_node("post_jd", post_jd)
     builder.add_edge(START, "retrieve")
     builder.add_edge("retrieve", "draft")
     builder.add_edge("draft", "review")
-    builder.add_edge("save", END)
+    builder.add_edge("save", "post_jd")
+    builder.add_edge("post_jd", END)
     return builder.compile(checkpointer=get_checkpointer())
