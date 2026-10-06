@@ -83,7 +83,8 @@ def generate_jd(job_id: int, payload: JDGenerateRequest, db: Session = Depends(g
         "job_id": job.id,
         "job_profile": _job_profile(job),
         "prompt": payload.prompt,
-        "feedback": None,
+        "description": job.description,
+        "feedback": payload.prompt if job.description else None,
         "messages": [{"role": "user", "content": payload.prompt}],
     })
     return _current_state(job)
