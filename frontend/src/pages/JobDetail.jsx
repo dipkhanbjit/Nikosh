@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { employmentLabel, getJob, STATUS_COLORS } from "../api/jobs";
 import JobFormModal from "../components/JobFormModal";
 import MarkdownView from "../components/MarkdownView";
+import PostingCard from "../components/PostingCard";
 import { Alert, Badge, Button, Card, PageHeader, Spinner } from "../components/ui";
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -98,6 +99,8 @@ export default function JobDetail() {
         </Card>
 
         <div className="flex flex-col gap-6">
+          <PostingCard job={job} onUpdated={setJob} />
+
           <Card title="Profile">
             <div className="divide-y divide-gray-100">
               <div className="flex justify-between py-2 text-sm">
