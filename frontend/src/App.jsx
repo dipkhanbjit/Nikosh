@@ -7,6 +7,7 @@ import Candidates from "./pages/Candidates";
 import Dashboard from "./pages/Dashboard";
 import Interviews from "./pages/Interviews";
 import Jobs from "./pages/Jobs";
+import JobDetail from "./pages/JobDetail";
 import KnowledgeBase from "./pages/KnowledgeBase";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -22,6 +23,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="knowledge-base" element={<KnowledgeBase />} />
           <Route path="jobs" element={<Jobs />} />
+          <Route path="jobs/:id" element={<JobDetail />} />
           <Route path="candidates" element={<Candidates />} />
           <Route path="interviews" element={<Interviews />} />
           <Route path="reports" element={<Reports />} />
