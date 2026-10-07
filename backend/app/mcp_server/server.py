@@ -43,15 +43,15 @@ def publish_to_telegram(title: str, details: str, link: str, apply_url: str = ""
 
 
 @mcp.tool()
-def list_job_applications(job_id: int) -> str:
-    """List all Google Form applications submitted for a job. Returns a JSON array
-    of {file_id, full_name, email, phone, submitted_at}."""
+def list_job_applications(job_title: str) -> str:
+    """List all Google Form applications submitted for a job position (matched by
+    job title). Returns a JSON array of {file_id, full_name, email, phone, submitted_at}."""
     try:
-        applications = list_applications(job_id)
+        applications = list_applications(job_title)
     except GoogleFormsError as exc:
-        logger.error("Listing applications failed for job %s: %s", job_id, exc)
+        logger.error("Listing applications failed for '%s': %s", job_title, exc)
         raise
-    logger.info("Listed %s application(s) for job %s", len(applications), job_id)
+    logger.info("Listed %s application(s) for '%s'", len(applications), job_title)
     return json.dumps(applications)
 
 

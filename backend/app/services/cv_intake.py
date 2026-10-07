@@ -52,6 +52,13 @@ def _parse_submitted_at(value: str | None) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _original_filename(drive_name: str) -> str:
+    """Google Forms renames uploads to '<original> - <uploader name>.<ext>'; undo that."""
+    path = Path(drive_name)
+    stem = path.stem.rsplit(" - ", 1)[0] if " - " in path.stem else path.stem
+    return f"{stem}{path.suffix}"
+
+
 # ---------- Channel 1: manual upload ----------
 
 def add_uploaded_cv(db: Session, job: Job, filename: str, data: bytes) -> dict:
@@ -79,7 +86,7 @@ def add_uploaded_cv(db: Session, job: Job, filename: str, data: bytes) -> dict:
 
 def new_applications(db: Session, job: Job) -> list[dict]:
     """Form applications for this job that have not been imported yet."""
-    applications = json.loads(call_tool("list_job_applications", job_id=job.id))
+    applications = json.loads(call_tool("list_job_applications", job_title=job.title))
     file_ids = [a["file_id"] for a in applications]
     if not file_ids:
         return []
@@ -102,12 +109,13 @@ def sync_applications(db: Session, job: Job) -> list[dict]:
             continue
 
         incoming = Path(info["path"])
-        reason = validate_cv(info["filename"], info["size"])
+        filename = _original_filename(info["filename"])
+        reason = validate_cv(filename, info["size"])
         stored_path = None
         if reason:
             delete_file(str(incoming))
         else:
-            stored_path = _job_dir(job.id) / _stored_name(info["filename"])
+            stored_path = _job_dir(job.id) / _stored_name(filename)
             shutil.move(incoming, stored_path)
 
         candidate = Candidate(
@@ -116,7 +124,7 @@ def sync_applications(db: Session, job: Job) -> list[dict]:
             email=app.get("email"),
             phone=app.get("phone"),
             cv_file_path=str(stored_path) if stored_path else None,
-            cv_filename=info["filename"],
+            cv_filename=filename,
             source="form",
             source_file_id=app["file_id"],
             applied_at=_parse_submitted_at(app.get("submitted_at")),
@@ -131,9 +139,9 @@ def sync_applications(db: Session, job: Job) -> list[dict]:
             continue  # imported concurrently by another sync
 
         if reason:
-            logger.warning("Job %s: rejected form CV %s: %s", job.id, info["filename"], reason)
-            results.append({"filename": info["filename"], "status": "rejected", "reason": reason})
+            logger.warning("Job %s: rejected form CV %s: %s", job.id, filename, reason)
+            results.append({"filename": filename, "status": "rejected", "reason": reason})
         else:
-            logger.info("Job %s: imported form CV %s as candidate %s", job.id, info["filename"], candidate.id)
-            results.append({"filename": info["filename"], "status": "imported", "candidate_id": candidate.id})
+            logger.info("Job %s: imported form CV %s as candidate %s", job.id, filename, candidate.id)
+            results.append({"filename": filename, "status": "imported", "candidate_id": candidate.id})
     return results

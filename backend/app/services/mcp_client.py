@@ -9,6 +9,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 logger = logging.getLogger(__name__)
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+TOOL_ERROR_PREFIX = "Error executing tool"
 
 
 class MCPToolError(Exception):
@@ -38,14 +39,20 @@ async def _call(name: str, args: dict) -> str:
     tool = next((t for t in tools if t.name == name), None)
     if tool is None:
         raise MCPToolError(f"MCP tool not found: {name}")
-    return _as_text(await tool.ainvoke(args))
+    tool.handle_tool_error = False  # raise tool failures instead of returning the error text
+    result = _as_text(await tool.ainvoke(args))
+    if result.startswith(TOOL_ERROR_PREFIX):
+        raise MCPToolError(result)
+    return result
 
 
 def call_tool(name: str, **args) -> str:
-    """Call a tool on the nikosh-tools MCP server and return its text result."""
+    """Call a tool on the nikosh-tools MCP server and return its text result.
+    Raises MCPToolError if the tool fails or cannot be reached."""
     try:
         result = asyncio.run(_call(name, args))
-    except MCPToolError:
+    except MCPToolError as exc:
+        logger.error("MCP tool %s failed: %s", name, exc)
         raise
     except Exception as exc:
         logger.error("MCP tool %s failed: %s", name, exc)

@@ -8,14 +8,15 @@ from app.core.config import settings
 from app.services.google_clients import drive_service, sheets_service
 
 FILE_ID_PATTERN = re.compile(r"[?&]id=([\w-]+)|/d/([\w-]+)")
-TIMESTAMP_FORMATS = ("%m/%d/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S")
+# The responses Sheet uses the Bangladesh locale (File → Settings → Locale), so dates are day-first
+TIMESTAMP_FORMATS = ("%d/%m/%Y %H:%M:%S",)
 
 COLUMNS = {
     "timestamp": "Timestamp",
     "email": "Email address",
     "full_name": "Full Name",
     "phone": "Phone Number",
-    "job_id": "Job ID",
+    "position": "Job Position",
     "cv": "CV",
 }
 
@@ -38,8 +39,12 @@ def _timestamp(value: str) -> str | None:
     return None
 
 
-def list_applications(job_id: int) -> list[dict]:
-    """Return all form submissions for the given job from the responses Sheet."""
+def _normalize(title: str) -> str:
+    return " ".join(title.split()).casefold()
+
+
+def list_applications(job_title: str) -> list[dict]:
+    """Return all form submissions whose Position matches the given job title."""
     if not settings.google_sheet_id:
         raise GoogleFormsError("Google Sheet is not configured")
     try:
@@ -59,10 +64,11 @@ def list_applications(job_id: int) -> list[dict]:
     if missing:
         raise GoogleFormsError(f"Sheet is missing columns: {', '.join(missing)}")
 
+    target = _normalize(job_title)
     applications = []
     for row in rows[1:]:
         cell = lambda key: row[index[key]].strip() if index[key] < len(row) else ""
-        if cell("job_id") != str(job_id):
+        if _normalize(cell("position")) != target:
             continue
         file_id = _file_id(cell("cv"))
         if not file_id:

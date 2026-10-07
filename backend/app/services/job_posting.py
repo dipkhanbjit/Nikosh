@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
@@ -18,10 +19,10 @@ EMPLOYMENT_LABELS = {
 
 
 def apply_url_for(job: Job) -> str:
-    """Pre-filled Google Form link with this job's ID."""
+    """Pre-filled Google Form link with this job's title as the Position."""
     if not settings.google_form_prefill_url:
         return ""
-    return settings.google_form_prefill_url.replace("{job_id}", str(job.id))
+    return settings.google_form_prefill_url.replace("{job_title}", quote(job.title))
 
 
 def _details(job: Job) -> str:

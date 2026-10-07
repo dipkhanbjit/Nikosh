@@ -21,12 +21,30 @@ def get_job_or_404(db: Session, job_id: int) -> Job:
     return job
 
 
+def _normalize(title: str) -> str:
+    return " ".join(title.split()).casefold()
+
+
+def ensure_unique_title(db: Session, title: str, exclude_id: int | None = None) -> None:
+    """Open jobs must have unique titles, because form applications are matched by title."""
+    open_jobs = db.execute(select(Job.id, Job.title).where(Job.status != "closed")).all()
+    target = _normalize(title)
+    if any(job_id != exclude_id and _normalize(t) == target for job_id, t in open_jobs):
+        raise AppException(
+            "An open job with this title already exists. Use a more specific title, "
+            "e.g. 'Frontend Developer (Payments)'.",
+            409,
+            "DUPLICATE_JOB_TITLE",
+        )
+
+
 @router.post("", response_model=JobOut, status_code=201)
 def create_job(
     payload: JobCreate,
     db: Session = Depends(get_db),
     user: User = Depends(interviewer_only),
 ):
+    ensure_unique_title(db, payload.title)
     job = Job(**payload.model_dump(), created_by=user.id)
     db.add(job)
     db.commit()
@@ -47,7 +65,17 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 @router.patch("/{job_id}", response_model=JobOut, dependencies=[Depends(interviewer_only)])
 def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db)):
     job = get_job_or_404(db, job_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    new_title = changes.get("title")
+    if new_title and _normalize(new_title) != _normalize(job.title):
+        if job.status == "posted":
+            raise AppException(
+                "The title of a posted job cannot be changed, because applications are matched by title",
+                409,
+                "JOB_ALREADY_POSTED",
+            )
+        ensure_unique_title(db, new_title, exclude_id=job.id)
+    for field, value in changes.items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
