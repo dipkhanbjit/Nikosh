@@ -67,8 +67,10 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
 @router.post("/{job_id}/post", response_model=JobOut, dependencies=[Depends(interviewer_only)])
 def post_job_now(job_id: int, db: Session = Depends(get_db)):
     job = get_job_or_404(db, job_id)
-    if job.status != "approved":
-        raise AppException("Only approved jobs can be posted", 409, "JOB_NOT_APPROVED")
+    needs_blogger = job.status == "approved"
+    needs_telegram = job.status == "posted" and not job.telegram_url
+    if not (needs_blogger or needs_telegram):
+        raise AppException("Nothing to post for this job", 409, "NOTHING_TO_POST")
     publish_job(db, job)
     db.refresh(job)
     return job

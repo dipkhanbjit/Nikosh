@@ -50,3 +50,7 @@ model_cache/
 *.crt
 
 .cache/
+
+backend/secrets/
+
+backend/logs/

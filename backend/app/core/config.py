@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     tesseract_cmd: str | None = None
     telegram_bot_token: str = ""
     telegram_channel: str = ""
+    google_service_account_file: str = "secrets/google-service-account.json"
+    google_oauth_client_file: str = "secrets/google-oauth-client.json"
+    google_oauth_token_file: str = "secrets/google-oauth-token.json"
+    google_sheet_id: str = ""
+    google_form_prefill_url: str = ""
+    blogger_blog_id: str = ""
+    cv_storage_dir: str = "storage/cvs"
+    cv_max_file_mb: int = 10
 
 
 @lru_cache

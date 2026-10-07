@@ -29,6 +29,9 @@ class Job(TimestampMixin, Base):
     posted_url: Mapped[str | None] = mapped_column(String(500))
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     posting_error: Mapped[str | None] = mapped_column(String(500))
+    telegram_url: Mapped[str | None] = mapped_column(String(500))
+    telegram_error: Mapped[str | None] = mapped_column(String(500))
+    telegram_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
     candidates: Mapped[list["Candidate"]] = relationship(
