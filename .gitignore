@@ -54,3 +54,5 @@ model_cache/
 backend/secrets/
 
 backend/logs/
+
+backend/storage/

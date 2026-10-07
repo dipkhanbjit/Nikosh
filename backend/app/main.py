@@ -18,6 +18,7 @@ app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(knowledge.router, prefix=settings.api_prefix)
 app.include_router(jobs.router, prefix=settings.api_prefix)
 app.include_router(candidates.router, prefix=settings.api_prefix)
+app.include_router(candidates.job_router, prefix=settings.api_prefix)
 app.include_router(jd.router, prefix=settings.api_prefix)
 
 logger.info("%s started (env=%s)", settings.app_name, settings.app_env)
