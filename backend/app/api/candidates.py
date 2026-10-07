@@ -1,4 +1,8 @@
+import mimetypes
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -63,6 +67,20 @@ def sync_job_applications(job_id: int, db: Session = Depends(get_db)):
     except MCPToolError:
         raise AppException("Could not reach Google Form applications", 503, "SYNC_UNAVAILABLE") from None
     return ImportSummary.from_results(results)
+
+
+@router.get("/{candidate_id}/cv")
+def view_cv(candidate_id: int, db: Session = Depends(get_db)):
+    candidate = db.get(Candidate, candidate_id)
+    if not candidate or not candidate.cv_file_path or not Path(candidate.cv_file_path).exists():
+        raise AppException("CV file not found", 404, "CV_NOT_FOUND")
+    media_type = mimetypes.guess_type(candidate.cv_filename or candidate.cv_file_path)[0]
+    return FileResponse(
+        candidate.cv_file_path,
+        media_type=media_type or "application/octet-stream",
+        filename=candidate.cv_filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.delete("/{candidate_id}", status_code=204)
