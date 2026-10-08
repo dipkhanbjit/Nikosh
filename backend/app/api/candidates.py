@@ -16,9 +16,11 @@ from app.schemas.candidate import (
     ExtractionSummary,
     ImportSummary,
     NewApplications,
+    ParseSummary,
 )
 from app.services.cv_extraction import extract_pending
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
+from app.services.cv_parsing import parse_pending
 from app.services.mcp_client import MCPToolError
 from app.services.storage import delete_file
 
@@ -68,6 +70,12 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
 def extract_job_cvs(job_id: int, db: Session = Depends(get_db)):
     """Extract text for candidates that are pending or failed (e.g. imported before 5.3.3)."""
     return extract_pending(db, _get_job(db, job_id))
+
+
+@job_router.post("/candidates/parse", response_model=ParseSummary)
+def parse_job_cvs(job_id: int, db: Session = Depends(get_db)):
+    """Parse extracted CVs into structured profiles (pending or previously failed)."""
+    return parse_pending(db, _get_job(db, job_id))
 
 
 @job_router.get("/applications/new", response_model=NewApplications)

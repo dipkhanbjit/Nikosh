@@ -8,22 +8,27 @@ import {
   extractCVs,
   getCVText,
   listCandidates,
+  parseCVs,
   syncApplications,
   uploadCVs,
 } from "../api/candidates";
-import { Alert, Badge, Button, Card, Modal, Spinner, Table } from "./ui";
+import CandidateProfileModal from "./CandidateProfileModal";
+import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
 const POLL_INTERVAL_MS = 30000;
 const SOURCE_BADGE = { form: ["blue", "Google Form"], upload: ["gray", "Upload"] };
 const STATUS_BADGE = { applied: ["green", "Applied"], rejected: ["red", "Rejected"] };
-const TEXT_BADGE = {
-  extracted: ["green", "Extracted"],
-  failed: ["red", "Failed"],
-  pending: ["gray", "Pending"],
-};
 
 const formatDateTime = (value) =>
   new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+function analysisState(c) {
+  if (c.extraction_status === "failed") return { color: "red", label: "Text failed", tip: c.extraction_error };
+  if (c.extraction_status !== "extracted") return { color: "gray", label: "Pending" };
+  if (c.parse_status === "parsed") return { color: "green", label: "Parsed", clickable: true };
+  if (c.parse_status === "failed") return { color: "red", label: "Parse failed", tip: c.parse_error, clickable: true };
+  return { color: "gray", label: "Pending", clickable: true };
+}
 
 function ImportResults({ summary, onClose }) {
   const problems = summary.results.filter((r) => r.status !== "imported");
@@ -55,7 +60,7 @@ export default function CandidatesCard({ job }) {
   const [newCount, setNewCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [extracting, setExtracting] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [summary, setSummary] = useState(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -63,8 +68,8 @@ export default function CandidatesCard({ job }) {
   const [viewing, setViewing] = useState(null);
 
   const canIntake = job.status === "approved" || job.status === "posted";
-  const needsExtraction = candidates.some(
-    (c) => c.status === "applied" && c.extraction_status !== "extracted"
+  const needsProcessing = candidates.some(
+    (c) => c.status === "applied" && (c.extraction_status !== "extracted" || c.parse_status !== "parsed")
   );
 
   const refresh = useCallback(() => {
@@ -87,57 +92,44 @@ export default function CandidatesCard({ job }) {
     return () => clearInterval(timer);
   }, [job.id, canIntake, refresh]);
 
-  const handleSync = async () => {
-    setSyncing(true);
+  const run = async (setBusy, action) => {
+    setBusy(true);
     setError("");
     setNotice("");
+    setSummary(null);
     try {
-      setSummary(await syncApplications(job.id));
+      await action();
       refresh();
     } catch (err) {
       setError(err.message);
     } finally {
-      setSyncing(false);
+      setBusy(false);
     }
   };
 
-  const handleFiles = async (e) => {
+  const handleSync = () => run(setSyncing, async () => setSummary(await syncApplications(job.id)));
+
+  const handleFiles = (e) => {
     const files = Array.from(e.target.files);
     e.target.value = "";
     if (files.length === 0) return;
-    setUploading(true);
-    setError("");
-    setNotice("");
-    try {
-      setSummary(await uploadCVs(job.id, files));
-      refresh();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setUploading(false);
-    }
+    run(setUploading, async () => setSummary(await uploadCVs(job.id, files)));
   };
 
-  const handleExtract = async () => {
-    setExtracting(true);
-    setError("");
-    setSummary(null);
-    try {
-      const r = await extractCVs(job.id);
-      setNotice(`Text extracted for ${r.extracted} of ${r.processed} CV(s)${r.failed ? `, ${r.failed} failed` : ""}.`);
-      refresh();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setExtracting(false);
-    }
-  };
+  const handleProcess = () =>
+    run(setProcessing, async () => {
+      const text = await extractCVs(job.id);
+      const parsed = await parseCVs(job.id);
+      const failed = text.failed + parsed.failed;
+      setNotice(
+        `Text extracted: ${text.extracted} · Profiles parsed: ${parsed.parsed}${failed ? ` · Failed: ${failed}` : ""}`
+      );
+    });
 
-  const openText = async (candidate) => {
-    setViewing({ candidate, text: null });
+  const openProfile = async (candidate) => {
+    setViewing({ candidate, data: null });
     try {
-      const data = await getCVText(candidate.id);
-      setViewing({ candidate, text: data.cv_text || "" });
+      setViewing({ candidate, data: await getCVText(candidate.id) });
     } catch (err) {
       setViewing(null);
       setError(err.message);
@@ -160,7 +152,7 @@ export default function CandidatesCard({ job }) {
       label: "Candidate",
       render: (c) => (
         <div>
-          <p className="font-medium text-gray-800">{c.full_name || "Name pending extraction"}</p>
+          <p className="font-medium text-gray-800">{c.full_name || "Name not found"}</p>
           <p className="text-xs text-gray-500">{c.email || c.cv_filename}</p>
         </div>
       ),
@@ -185,22 +177,18 @@ export default function CandidatesCard({ job }) {
         ),
     },
     {
-      key: "text",
-      label: "CV Text",
+      key: "analysis",
+      label: "CV Analysis",
       render: (c) => {
         if (c.status === "rejected") return "—";
-        const [color, label] = TEXT_BADGE[c.extraction_status] ?? ["gray", c.extraction_status];
-        if (c.extraction_status === "extracted") {
-          return (
-            <button type="button" onClick={() => openText(c)} title="View extracted text">
-              <Badge color={color}>{label}</Badge>
-            </button>
-          );
-        }
-        return (
-          <span title={c.extraction_error || ""}>
-            <Badge color={color}>{label}</Badge>
-          </span>
+        const s = analysisState(c);
+        const badge = <Badge color={s.color}>{s.label}</Badge>;
+        return s.clickable ? (
+          <button type="button" onClick={() => openProfile(c)} title={s.tip || "View profile"}>
+            {badge}
+          </button>
+        ) : (
+          <span title={s.tip || ""}>{badge}</span>
         );
       },
     },
@@ -244,9 +232,9 @@ export default function CandidatesCard({ job }) {
       actions={
         canIntake && (
           <div className="flex gap-2">
-            {needsExtraction && (
-              <Button variant="secondary" onClick={handleExtract} loading={extracting}>
-                {extracting ? "Extracting…" : "Extract CV Text"}
+            {needsProcessing && (
+              <Button variant="secondary" onClick={handleProcess} loading={processing}>
+                {processing ? "Processing…" : "Process CVs"}
               </Button>
             )}
             <Button variant="secondary" onClick={() => fileInput.current.click()} loading={uploading}>
@@ -278,26 +266,7 @@ export default function CandidatesCard({ job }) {
         <Table columns={columns} data={candidates} emptyMessage="No candidates yet." />
       </div>
 
-      <Modal
-        open={Boolean(viewing)}
-        title={`Extracted Text — ${viewing?.candidate.cv_filename ?? ""}`}
-        onClose={() => setViewing(null)}
-        footer={
-          <Button variant="secondary" onClick={() => setViewing(null)}>
-            Close
-          </Button>
-        }
-      >
-        {viewing?.text === null ? (
-          <div className="flex justify-center py-8 text-indigo-600">
-            <Spinner />
-          </div>
-        ) : (
-          <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-md bg-gray-50 p-3 font-sans text-xs leading-relaxed text-gray-700">
-            {viewing?.text}
-          </pre>
-        )}
-      </Modal>
+      <CandidateProfileModal viewing={viewing} onClose={() => setViewing(null)} />
 
       <Modal
         open={Boolean(deleting)}

@@ -23,3 +23,6 @@ export const extractCVs = (jobId) =>
   apiRequest(`/jobs/${jobId}/candidates/extract`, { method: "POST" });
 
 export const getCVText = (id) => apiRequest(`/candidates/${id}/text`);
+
+export const parseCVs = (jobId) =>
+  apiRequest(`/jobs/${jobId}/candidates/parse`, { method: "POST" });

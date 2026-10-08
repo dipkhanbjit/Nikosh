@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models import Candidate, Job
 from app.services.cv_extraction import extract_candidate_text
+from app.services.cv_parsing import parse_candidate
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.storage import delete_file
 
@@ -31,6 +32,12 @@ def validate_cv(filename: str, size: int) -> str | None:
     if size > settings.cv_max_file_mb * 1024 * 1024:
         return f"File is larger than {settings.cv_max_file_mb} MB"
     return None
+
+
+def process_cv(db: Session, candidate: Candidate) -> None:
+    """Extract the CV text, then parse it into a structured profile."""
+    if extract_candidate_text(db, candidate):
+        parse_candidate(db, candidate)
 
 
 def _job_dir(job_id: int) -> Path:
@@ -80,7 +87,7 @@ def add_uploaded_cv(db: Session, job: Job, filename: str, data: bytes) -> dict:
     db.add(candidate)
     db.commit()
     logger.info("Job %s: imported upload %s as candidate %s", job.id, filename, candidate.id)
-    extract_candidate_text(db, candidate)
+    process_cv(db, candidate)
     return {"filename": filename, "status": "imported", "candidate_id": candidate.id}
 
 
@@ -145,6 +152,6 @@ def sync_applications(db: Session, job: Job) -> list[dict]:
             results.append({"filename": filename, "status": "rejected", "reason": reason})
         else:
             logger.info("Job %s: imported form CV %s as candidate %s", job.id, filename, candidate.id)
-            extract_candidate_text(db, candidate)
+            process_cv(db, candidate)
             results.append({"filename": filename, "status": "imported", "candidate_id": candidate.id})
     return results

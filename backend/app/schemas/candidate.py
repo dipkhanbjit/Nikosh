@@ -17,6 +17,8 @@ class CandidateOut(BaseModel):
     status: str
     extraction_status: str
     extraction_error: str | None
+    parse_status: str
+    parse_error: str | None
     applied_at: datetime | None
     created_at: datetime
 
@@ -55,6 +57,12 @@ class ExtractionSummary(BaseModel):
     failed: int
 
 
+class ParseSummary(BaseModel):
+    processed: int
+    parsed: int
+    failed: int
+
+
 class CandidateText(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,3 +70,5 @@ class CandidateText(BaseModel):
     cv_filename: str | None
     extraction_status: str
     cv_text: str | None
+    parse_status: str
+    profile: dict | None
