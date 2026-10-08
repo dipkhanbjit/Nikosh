@@ -29,3 +29,12 @@ export const generateJD = (id, prompt) =>
   apiRequest(`/jobs/${id}/jd/generate`, { method: "POST", body: { prompt } });
 export const reviewJD = (id, body) =>
   apiRequest(`/jobs/${id}/jd/review`, { method: "POST", body });
+export const formatDeadline = (iso) =>
+  new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Dhaka",
+  });
+export const deadlineInputValue = (iso) =>
+  iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }) : "";

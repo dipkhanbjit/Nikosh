@@ -15,6 +15,7 @@ class CandidateOut(BaseModel):
     cv_filename: str | None
     source: str
     status: str
+    rejection_reason: str | None
     extraction_status: str
     extraction_error: str | None
     parse_status: str

@@ -12,6 +12,7 @@ import {
   syncApplications,
   uploadCVs,
 } from "../api/candidates";
+import { formatDeadline } from "../api/jobs";
 import CandidateProfileModal from "./CandidateProfileModal";
 import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
@@ -68,6 +69,7 @@ export default function CandidatesCard({ job }) {
   const [viewing, setViewing] = useState(null);
 
   const canIntake = job.status === "approved" || job.status === "posted";
+  const closed = job.applications_closed;
   const needsProcessing = candidates.some(
     (c) => c.status === "applied" && (c.extraction_status !== "extracted" || c.parse_status !== "parsed")
   );
@@ -205,7 +207,14 @@ export default function CandidatesCard({ job }) {
       label: "Status",
       render: (c) => {
         const [color, label] = STATUS_BADGE[c.status] ?? ["gray", c.status];
-        return <Badge color={color}>{label}</Badge>;
+        return (
+          <div>
+            <Badge color={color}>{label}</Badge>
+            {c.rejection_reason && (
+              <p className="mt-1 max-w-[12rem] text-xs text-red-600">{c.rejection_reason}</p>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -237,9 +246,11 @@ export default function CandidatesCard({ job }) {
                 {processing ? "Processing…" : "Process CVs"}
               </Button>
             )}
-            <Button variant="secondary" onClick={() => fileInput.current.click()} loading={uploading}>
-              Upload CVs
-            </Button>
+            {!closed && (
+              <Button variant="secondary" onClick={() => fileInput.current.click()} loading={uploading}>
+                Upload CVs
+              </Button>
+            )}
             <Button variant={newCount > 0 ? "danger" : "primary"} onClick={handleSync} loading={syncing}>
               {syncing ? "Syncing…" : newCount > 0 ? `Sync Applications (${newCount} new)` : "Sync Applications"}
             </Button>
@@ -259,6 +270,12 @@ export default function CandidatesCard({ job }) {
       <div className="flex flex-col gap-4">
         {!canIntake && (
           <p className="text-sm text-gray-500">CV collection opens once the JD is approved.</p>
+        )}
+        {canIntake && closed && (
+          <Alert type="info">
+            Applications closed on {formatDeadline(job.application_deadline)}. Form submissions after the
+            deadline are rejected automatically during sync.
+          </Alert>
         )}
         {error && <Alert type="error">{error}</Alert>}
         {notice && <Alert type="success">{notice}</Alert>}

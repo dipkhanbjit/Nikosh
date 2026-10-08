@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { employmentLabel, getJob, STATUS_COLORS } from "../api/jobs";
+import { employmentLabel, formatDeadline, getJob, STATUS_COLORS } from "../api/jobs";
 import CandidatesCard from "../components/CandidatesCard";
 import JobFormModal from "../components/JobFormModal";
 import MarkdownView from "../components/MarkdownView";
@@ -35,6 +35,22 @@ function DetailRow({ label, value }) {
     <div className="flex justify-between py-2 text-sm">
       <span className="text-gray-500">{label}</span>
       <span className="font-medium text-gray-800">{value || "—"}</span>
+    </div>
+  );
+}
+
+function DeadlineRow({ job }) {
+  return (
+    <div className="flex justify-between py-2 text-sm">
+      <span className="text-gray-500">Application Deadline</span>
+      {job.application_deadline ? (
+        <span className="flex items-center gap-2 font-medium text-gray-800">
+          {formatDeadline(job.application_deadline)}
+          {job.applications_closed && <Badge color="red">Closed</Badge>}
+        </span>
+      ) : (
+        <span className="font-medium text-gray-800">Set on posting</span>
+      )}
     </div>
   );
 }
@@ -115,6 +131,7 @@ export default function JobDetail() {
                 label="Minimum Experience"
                 value={job.min_experience_years != null ? `${job.min_experience_years} years` : null}
               />
+              <DeadlineRow job={job} />
             </div>
           </Card>
 

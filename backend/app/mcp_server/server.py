@@ -17,11 +17,11 @@ mcp = FastMCP("nikosh-tools")
 
 
 @mcp.tool()
-def publish_to_blogger(title: str, description: str, apply_url: str = "") -> str:
+def publish_to_blogger(title: str, description: str, apply_url: str = "", deadline: str = "") -> str:
     """Publish a job description (Markdown) to the Nirvik Careers blog with an
-    Apply section linking to the application form. Returns the post URL."""
+    Apply section linking to the application form and showing the deadline. Returns the post URL."""
     try:
-        url = publish_post(title, build_post_html(description, apply_url or None))
+        url = publish_post(title, build_post_html(description, apply_url or None, deadline or None))
     except BloggerError as exc:
         logger.error("Blogger post failed for '%s': %s", title, exc)
         raise

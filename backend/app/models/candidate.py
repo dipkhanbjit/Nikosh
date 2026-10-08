@@ -26,6 +26,7 @@ class Candidate(TimestampMixin, Base):
     source_file_id: Mapped[str | None] = mapped_column(String(200), unique=True)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), default="applied")
+    rejection_reason: Mapped[str | None] = mapped_column(String(255))
     cv_text: Mapped[str | None] = mapped_column(Text)
     extraction_status: Mapped[str] = mapped_column(String(20), default="pending")
     extraction_error: Mapped[str | None] = mapped_column(String(500))

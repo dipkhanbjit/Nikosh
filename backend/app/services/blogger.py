@@ -8,11 +8,13 @@ class BloggerError(Exception):
     pass
 
 
-def build_post_html(description: str, apply_url: str | None) -> str:
+def build_post_html(description: str, apply_url: str | None, deadline: str | None = None) -> str:
     html = md.markdown(description)
     if apply_url:
+        html += '<hr><h2>Apply Now</h2>'
+        if deadline:
+            html += f"<p><strong>Application deadline:</strong> {deadline}</p>"
         html += (
-            '<hr><h2>Apply Now</h2>'
             f'<p><a href="{apply_url}" target="_blank" rel="noopener">'
             "Click here to apply with your CV</a></p>"
         )

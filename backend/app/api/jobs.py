@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Job, User
 from app.schemas.job import JobCreate, JobOut, JobUpdate
+from app.services.deadlines import end_of_day
 from app.services.job_posting import publish_job
 from app.services.storage import delete_file
 
@@ -45,7 +46,10 @@ def create_job(
     user: User = Depends(interviewer_only),
 ):
     ensure_unique_title(db, payload.title)
-    job = Job(**payload.model_dump(), created_by=user.id)
+    data = payload.model_dump()
+    deadline = data.pop("application_deadline")
+    job = Job(**data, created_by=user.id)
+    job.application_deadline = end_of_day(deadline) if deadline else None
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -75,6 +79,9 @@ def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db)):
                 "JOB_ALREADY_POSTED",
             )
         ensure_unique_title(db, new_title, exclude_id=job.id)
+    if "application_deadline" in changes:
+        deadline = changes.pop("application_deadline")
+        job.application_deadline = end_of_day(deadline) if deadline else None
     for field, value in changes.items():
         setattr(job, field, value)
     db.commit()

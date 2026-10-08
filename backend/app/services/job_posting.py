@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import Job
+from app.services.deadlines import deadline_label, default_deadline
 from app.services.mcp_client import MCPToolError, call_tool
 
 logger = logging.getLogger(__name__)
@@ -29,19 +30,29 @@ def _details(job: Job) -> str:
     parts = [job.location, EMPLOYMENT_LABELS.get(job.employment_type, job.employment_type)]
     if job.min_experience_years is not None:
         parts.append(f"{job.min_experience_years}+ years experience")
+    if job.application_deadline:
+        parts.append(f"Apply by {deadline_label(job)}")
     return " · ".join(p for p in parts if p)
 
 
 def publish_job(db: Session, job: Job) -> bool:
     """Publish the JD to Blogger, then announce it on Telegram, via MCP tools.
     Returns True if the JD is live on Blogger."""
+    if not job.application_deadline:
+        job.application_deadline = default_deadline(datetime.now(timezone.utc))
+        db.commit()
+        logger.info("Job %s: default application deadline set to %s", job.id, deadline_label(job))
+
     apply_url = apply_url_for(job)
 
     if not job.posted_url:
         try:
             job.posted_url = call_tool(
                 "publish_to_blogger",
-                title=job.title, description=job.description, apply_url=apply_url,
+                title=job.title,
+                description=job.description,
+                apply_url=apply_url,
+                deadline=deadline_label(job),
             )
         except MCPToolError as exc:
             job.posting_error = str(exc)[:500]

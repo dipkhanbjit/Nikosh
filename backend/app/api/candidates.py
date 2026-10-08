@@ -23,6 +23,7 @@ from app.services.cv_extraction import extract_pending
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.cv_matching import screen_pending
 from app.services.cv_parsing import parse_pending
+from app.services.deadlines import applications_closed, deadline_label
 from app.services.mcp_client import MCPToolError
 from app.services.storage import delete_file
 
@@ -62,6 +63,8 @@ def list_candidates(job_id: int, db: Session = Depends(get_db)):
 @job_router.post("/candidates/upload", response_model=ImportSummary)
 def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
     job = _get_job(db, job_id, for_intake=True)
+    if applications_closed(job):
+        raise AppException(f"Applications closed on {deadline_label(job)}", 409, "APPLICATIONS_CLOSED")
     if len(files) > MAX_FILES_PER_UPLOAD:
         raise AppException(f"Upload at most {MAX_FILES_PER_UPLOAD} files at once", 400, "TOO_MANY_FILES")
     results = [add_uploaded_cv(db, job, f.filename, f.file.read()) for f in files]
@@ -70,7 +73,7 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
 
 @job_router.post("/candidates/extract", response_model=ExtractionSummary)
 def extract_job_cvs(job_id: int, db: Session = Depends(get_db)):
-    """Extract text for candidates that are pending or failed (e.g. imported before 5.3.3)."""
+    """Extract text for candidates that are pending or failed."""
     return extract_pending(db, _get_job(db, job_id))
 
 

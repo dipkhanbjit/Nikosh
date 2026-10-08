@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.models import Candidate, Job
 from app.services.cv_extraction import extract_candidate_text
 from app.services.cv_parsing import parse_candidate
+from app.services.deadlines import applications_closed, deadline_label
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.storage import delete_file
 
@@ -67,6 +68,18 @@ def _original_filename(drive_name: str) -> str:
     return f"{stem}{path.suffix}"
 
 
+def _commit_candidate(db: Session, candidate: Candidate, stored_path: Path | None = None) -> bool:
+    """Save a form candidate; returns False if another sync imported it first."""
+    db.add(candidate)
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        delete_file(str(stored_path) if stored_path else None)
+        return False
+
+
 # ---------- Channel 1: manual upload ----------
 
 def add_uploaded_cv(db: Session, job: Job, filename: str, data: bytes) -> dict:
@@ -105,11 +118,40 @@ def new_applications(db: Session, job: Job) -> list[dict]:
     return [a for a in applications if a["file_id"] not in imported]
 
 
+def _reject_late(db: Session, job: Job, app: dict, submitted_at: datetime) -> dict | None:
+    """Record an application submitted after the deadline without downloading its CV."""
+    reason = f"Applied after the deadline ({deadline_label(job)})"
+    candidate = Candidate(
+        job_id=job.id,
+        full_name=app.get("full_name"),
+        email=app.get("email"),
+        phone=app.get("phone"),
+        source="form",
+        source_file_id=app["file_id"],
+        applied_at=submitted_at,
+        status="rejected",
+        rejection_reason=reason,
+    )
+    if not _commit_candidate(db, candidate):
+        return None
+    label = app.get("full_name") or app["file_id"]
+    logger.warning("Job %s: rejected late application from %s: %s", job.id, label, reason)
+    return {"filename": label, "status": "rejected", "reason": reason}
+
+
 def sync_applications(db: Session, job: Job) -> list[dict]:
     """Import every new form application for the job. Returns per-file results."""
     results = []
     for app in new_applications(db, job):
         label = app.get("full_name") or app["file_id"]
+        submitted_at = _parse_submitted_at(app.get("submitted_at"))
+
+        if applications_closed(job, submitted_at):
+            result = _reject_late(db, job, app, submitted_at)
+            if result:
+                results.append(result)
+            continue
+
         try:
             info = json.loads(call_tool("download_cv", file_id=app["file_id"]))
         except MCPToolError as exc:
@@ -136,15 +178,11 @@ def sync_applications(db: Session, job: Job) -> list[dict]:
             cv_filename=filename,
             source="form",
             source_file_id=app["file_id"],
-            applied_at=_parse_submitted_at(app.get("submitted_at")),
+            applied_at=submitted_at,
             status="rejected" if reason else "applied",
+            rejection_reason=reason,
         )
-        db.add(candidate)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            delete_file(str(stored_path) if stored_path else None)
+        if not _commit_candidate(db, candidate, stored_path):
             continue  # imported concurrently by another sync
 
         if reason:

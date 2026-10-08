@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     blogger_blog_id: str = ""
     cv_storage_dir: str = "storage/cvs"
     cv_max_file_mb: int = 10
+    default_application_days: int = 21
 
 
 @lru_cache
