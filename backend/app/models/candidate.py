@@ -32,5 +32,8 @@ class Candidate(TimestampMixin, Base):
     profile: Mapped[dict | None] = mapped_column(JSONB)
     parse_status: Mapped[str] = mapped_column(String(20), default="pending")
     parse_error: Mapped[str | None] = mapped_column(String(500))
+    screening: Mapped[list[dict] | None] = mapped_column(JSONB)
+    screening_status: Mapped[str] = mapped_column(String(20), default="pending")
+    screening_error: Mapped[str | None] = mapped_column(String(500))
 
     job: Mapped["Job"] = relationship(back_populates="candidates")
