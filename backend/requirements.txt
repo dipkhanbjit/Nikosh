@@ -74,3 +74,9 @@ pgvector
 python-multipart
 pytesseract
 pypdfium2
+google-api-python-client
+google-auth
+google-auth-oauthlib
+mcp
+langchain-mcp-adapters
+markdown

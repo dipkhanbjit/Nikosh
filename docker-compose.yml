@@ -25,6 +25,9 @@ services:
       - "8000:8000"
     volumes:
       - fastembed_cache:/app/.cache/fastembed
+      - ./backend/secrets:/app/secrets
+      - ./backend/logs:/app/logs
+      - ./backend/storage:/app/storage
     depends_on:
       db:
         condition: service_healthy

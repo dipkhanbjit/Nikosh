@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { employmentLabel, getJob, STATUS_COLORS } from "../api/jobs";
+import CandidatesCard from "../components/CandidatesCard";
 import JobFormModal from "../components/JobFormModal";
 import MarkdownView from "../components/MarkdownView";
 import PostingCard from "../components/PostingCard";
@@ -128,6 +129,10 @@ export default function JobDetail() {
             )}
           </Card>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <CandidatesCard job={job} />
       </div>
 
       <JobFormModal

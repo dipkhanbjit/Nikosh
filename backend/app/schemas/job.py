@@ -50,6 +50,9 @@ class JobOut(BaseModel):
     posted_url: str | None
     posted_at: datetime | None
     posting_error: str | None
+    telegram_url: str | None
+    telegram_error: str | None
+    telegram_posted_at: datetime | None
     created_by: int
     created_at: datetime
     updated_at: datetime
