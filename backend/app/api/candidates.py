@@ -10,7 +10,14 @@ from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Candidate, Job
-from app.schemas.candidate import CandidateOut, ImportSummary, NewApplications
+from app.schemas.candidate import (
+    CandidateOut,
+    CandidateText,
+    ExtractionSummary,
+    ImportSummary,
+    NewApplications,
+)
+from app.services.cv_extraction import extract_pending
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.mcp_client import MCPToolError
 from app.services.storage import delete_file
@@ -33,6 +40,13 @@ def _get_job(db: Session, job_id: int, for_intake: bool = False) -> Job:
     return job
 
 
+def _get_candidate(db: Session, candidate_id: int) -> Candidate:
+    candidate = db.get(Candidate, candidate_id)
+    if not candidate:
+        raise AppException("Candidate not found", 404, "CANDIDATE_NOT_FOUND")
+    return candidate
+
+
 @job_router.get("/candidates", response_model=list[CandidateOut])
 def list_candidates(job_id: int, db: Session = Depends(get_db)):
     _get_job(db, job_id)
@@ -48,6 +62,12 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
         raise AppException(f"Upload at most {MAX_FILES_PER_UPLOAD} files at once", 400, "TOO_MANY_FILES")
     results = [add_uploaded_cv(db, job, f.filename, f.file.read()) for f in files]
     return ImportSummary.from_results(results)
+
+
+@job_router.post("/candidates/extract", response_model=ExtractionSummary)
+def extract_job_cvs(job_id: int, db: Session = Depends(get_db)):
+    """Extract text for candidates that are pending or failed (e.g. imported before 5.3.3)."""
+    return extract_pending(db, _get_job(db, job_id))
 
 
 @job_router.get("/applications/new", response_model=NewApplications)
@@ -69,10 +89,15 @@ def sync_job_applications(job_id: int, db: Session = Depends(get_db)):
     return ImportSummary.from_results(results)
 
 
+@router.get("/{candidate_id}/text", response_model=CandidateText)
+def get_cv_text(candidate_id: int, db: Session = Depends(get_db)):
+    return _get_candidate(db, candidate_id)
+
+
 @router.get("/{candidate_id}/cv")
 def view_cv(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = db.get(Candidate, candidate_id)
-    if not candidate or not candidate.cv_file_path or not Path(candidate.cv_file_path).exists():
+    candidate = _get_candidate(db, candidate_id)
+    if not candidate.cv_file_path or not Path(candidate.cv_file_path).exists():
         raise AppException("CV file not found", 404, "CV_NOT_FOUND")
     media_type = mimetypes.guess_type(candidate.cv_filename or candidate.cv_file_path)[0]
     return FileResponse(
@@ -85,9 +110,7 @@ def view_cv(candidate_id: int, db: Session = Depends(get_db)):
 
 @router.delete("/{candidate_id}", status_code=204)
 def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = db.get(Candidate, candidate_id)
-    if not candidate:
-        raise AppException("Candidate not found", 404, "CANDIDATE_NOT_FOUND")
+    candidate = _get_candidate(db, candidate_id)
     cv_path = candidate.cv_file_path
     db.delete(candidate)
     db.commit()

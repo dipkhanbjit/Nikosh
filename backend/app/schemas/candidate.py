@@ -15,6 +15,8 @@ class CandidateOut(BaseModel):
     cv_filename: str | None
     source: str
     status: str
+    extraction_status: str
+    extraction_error: str | None
     applied_at: datetime | None
     created_at: datetime
 
@@ -45,3 +47,18 @@ class ImportSummary(BaseModel):
 
 class NewApplications(BaseModel):
     count: int
+
+
+class ExtractionSummary(BaseModel):
+    processed: int
+    extracted: int
+    failed: int
+
+
+class CandidateText(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    cv_filename: str | None
+    extraction_status: str
+    cv_text: str | None

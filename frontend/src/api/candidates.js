@@ -18,3 +18,8 @@ export const uploadCVs = (jobId, files) => {
 export const deleteCandidate = (id) => apiRequest(`/candidates/${id}`, { method: "DELETE" });
 
 export const cvUrl = (id) => `/api/v1/candidates/${id}/cv`;
+
+export const extractCVs = (jobId) =>
+  apiRequest(`/jobs/${jobId}/candidates/extract`, { method: "POST" });
+
+export const getCVText = (id) => apiRequest(`/candidates/${id}/text`);
