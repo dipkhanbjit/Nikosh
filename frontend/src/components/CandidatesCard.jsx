@@ -9,6 +9,7 @@ import {
   getCVText,
   listCandidates,
   parseCVs,
+  screenCVs,
   syncApplications,
   uploadCVs,
 } from "../api/candidates";
@@ -26,9 +27,12 @@ const formatDateTime = (value) =>
 function analysisState(c) {
   if (c.extraction_status === "failed") return { color: "red", label: "Text failed", tip: c.extraction_error };
   if (c.extraction_status !== "extracted") return { color: "gray", label: "Pending" };
-  if (c.parse_status === "parsed") return { color: "green", label: "Parsed", clickable: true };
   if (c.parse_status === "failed") return { color: "red", label: "Parse failed", tip: c.parse_error, clickable: true };
-  return { color: "gray", label: "Pending", clickable: true };
+  if (c.parse_status !== "parsed") return { color: "gray", label: "Pending", clickable: true };
+  if (c.screening_status === "screened") return { color: "green", label: "Screened", clickable: true };
+  if (c.screening_status === "failed")
+    return { color: "red", label: "Screening failed", tip: c.screening_error, clickable: true };
+  return { color: "blue", label: "Parsed", clickable: true };
 }
 
 function ImportResults({ summary, onClose }) {
@@ -71,7 +75,9 @@ export default function CandidatesCard({ job }) {
   const canIntake = job.status === "approved" || job.status === "posted";
   const closed = job.applications_closed;
   const needsProcessing = candidates.some(
-    (c) => c.status === "applied" && (c.extraction_status !== "extracted" || c.parse_status !== "parsed")
+    (c) =>
+      c.status === "applied" &&
+      (c.extraction_status !== "extracted" || c.parse_status !== "parsed" || c.screening_status !== "screened")
   );
 
   const refresh = useCallback(() => {
@@ -122,9 +128,11 @@ export default function CandidatesCard({ job }) {
     run(setProcessing, async () => {
       const text = await extractCVs(job.id);
       const parsed = await parseCVs(job.id);
-      const failed = text.failed + parsed.failed;
+      const screened = await screenCVs(job.id);
+      const failed = text.failed + parsed.failed + screened.failed;
       setNotice(
-        `Text extracted: ${text.extracted} · Profiles parsed: ${parsed.parsed}${failed ? ` · Failed: ${failed}` : ""}`
+        `Text extracted: ${text.extracted} · Profiles parsed: ${parsed.parsed} · Screened: ${screened.screened}` +
+          (failed ? ` · Failed: ${failed}` : "")
       );
     });
 
@@ -186,7 +194,7 @@ export default function CandidatesCard({ job }) {
         const s = analysisState(c);
         const badge = <Badge color={s.color}>{s.label}</Badge>;
         return s.clickable ? (
-          <button type="button" onClick={() => openProfile(c)} title={s.tip || "View profile"}>
+          <button type="button" onClick={() => openProfile(c)} title={s.tip || "View details"}>
             {badge}
           </button>
         ) : (

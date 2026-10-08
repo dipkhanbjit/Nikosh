@@ -2,6 +2,12 @@ import { useState } from "react";
 
 import { Badge, Button, Modal, Spinner } from "./ui";
 
+const RATINGS = {
+  met: { label: "Met", className: "bg-green-100 text-green-700" },
+  partial: { label: "Partially Met", className: "bg-yellow-100 text-yellow-800" },
+  unmet: { label: "Unmet", className: "bg-red-100 text-red-700" },
+};
+
 function Section({ title, children }) {
   return (
     <div>
@@ -11,7 +17,43 @@ function Section({ title, children }) {
   );
 }
 
+function RatingBadge({ rating }) {
+  const r = RATINGS[rating] ?? { label: rating, className: "bg-gray-100 text-gray-700" };
+  return (
+    <span className={`inline-block shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${r.className}`}>
+      {r.label}
+    </span>
+  );
+}
+
 const period = (start, end) => [start || "?", end || "?"].join(" – ");
+
+function RequirementMatch({ screening }) {
+  const count = (rating) => screening.filter((m) => m.rating === rating).length;
+  return (
+    <Section title="Requirement Match">
+      <p className="mb-2 text-sm text-gray-600">
+        {count("met")} Met · {count("partial")} Partially Met · {count("unmet")} Unmet
+      </p>
+      <ul className="divide-y divide-gray-100 rounded-md border border-gray-200">
+        {screening.map((m) => (
+          <li key={m.id} className="p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">{m.text}</p>
+                <p className="text-xs text-gray-500">
+                  {m.mandatory ? "Mandatory" : "Preferred"} · Weight {m.weight}
+                </p>
+              </div>
+              <RatingBadge rating={m.rating} />
+            </div>
+            <p className="mt-2 text-sm italic text-gray-600">{m.evidence}</p>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
 
 function ProfileView({ profile }) {
   return (
@@ -72,9 +114,7 @@ function ProfileView({ profile }) {
                     {e.degree}
                     {e.field && ` in ${e.field}`}
                   </p>
-                  <p className="text-gray-500">
-                    {[e.institution, e.result].filter(Boolean).join(" · ")}
-                  </p>
+                  <p className="text-gray-500">{[e.institution, e.result].filter(Boolean).join(" · ")}</p>
                 </div>
                 {e.graduation_year && <span className="shrink-0 text-xs text-gray-500">{e.graduation_year}</span>}
               </li>
@@ -100,6 +140,7 @@ export default function CandidateProfileModal({ viewing, onClose }) {
   const [showText, setShowText] = useState(false);
   const data = viewing?.data;
   const hasProfile = Boolean(data?.profile);
+  const hasScreening = Array.isArray(data?.screening) && data.screening.length > 0;
 
   const close = () => {
     setShowText(false);
@@ -129,7 +170,8 @@ export default function CandidateProfileModal({ viewing, onClose }) {
           <Spinner />
         </div>
       ) : hasProfile && !showText ? (
-        <div className="max-h-[60vh] overflow-y-auto pr-1">
+        <div className="flex max-h-[60vh] flex-col gap-6 overflow-y-auto pr-1">
+          {hasScreening && <RequirementMatch screening={data.screening} />}
           <ProfileView profile={data.profile} />
         </div>
       ) : (
