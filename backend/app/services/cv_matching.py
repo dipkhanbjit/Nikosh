@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models import Candidate, Job
 from app.schemas.screening import ScreeningResult
 from app.services.llm import get_llm
+from app.services.ranking import apply_ranking_rules
 
 logger = logging.getLogger(__name__)
 
@@ -109,21 +110,26 @@ def match_cv(job: Job, candidate: Candidate) -> list[dict]:
 
 
 def screen_candidate(db: Session, job: Job, candidate: Candidate) -> bool:
-    """Run requirement matching for one candidate and store the result."""
+    """Match the candidate against the requirements, then score and filter (in code)."""
     try:
         candidate.screening = match_cv(job, candidate)
     except MatchingError as exc:
         candidate.screening_status = "failed"
         candidate.screening_error = str(exc)[:500]
+        candidate.match_score = None
         db.commit()
         logger.warning("Candidate %s: screening failed: %s", candidate.id, exc)
         return False
 
     candidate.screening_status = "screened"
     candidate.screening_error = None
+    apply_ranking_rules(candidate)
     db.commit()
     met = sum(1 for m in candidate.screening if m["rating"] == "met")
-    logger.info("Candidate %s: screened (%s/%s requirements met)", candidate.id, met, len(candidate.screening))
+    logger.info(
+        "Candidate %s: screened (%s/%s met, score %s, %s)",
+        candidate.id, met, len(candidate.screening), candidate.match_score, candidate.status,
+    )
     return True
 
 

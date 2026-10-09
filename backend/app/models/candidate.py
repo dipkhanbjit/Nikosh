@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text, Float
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,5 +37,6 @@ class Candidate(TimestampMixin, Base):
     screening: Mapped[list[dict] | None] = mapped_column(JSONB)
     screening_status: Mapped[str] = mapped_column(String(20), default="pending")
     screening_error: Mapped[str | None] = mapped_column(String(500))
+    match_score: Mapped[float | None] = mapped_column(Float)
 
     job: Mapped["Job"] = relationship(back_populates="candidates")

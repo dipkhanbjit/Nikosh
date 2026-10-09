@@ -16,6 +16,8 @@ class CandidateOut(BaseModel):
     source: str
     status: str
     rejection_reason: str | None
+    match_score: float | None = None
+    rank: int | None = None
     extraction_status: str
     extraction_error: str | None
     parse_status: str

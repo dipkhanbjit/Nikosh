@@ -86,7 +86,7 @@ def _is_duplicate_email(db: Session, job: Job, email: str | None) -> bool:
     return db.scalar(
         select(Candidate.id).where(
             Candidate.job_id == job.id,
-            Candidate.status == "applied",
+            Candidate.status.in_(("applied", "excluded")),
             func.lower(Candidate.email) == email,
         ).limit(1)
     ) is not None

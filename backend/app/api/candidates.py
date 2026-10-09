@@ -6,6 +6,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.services.ranking import ranked_candidates
+
 from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
@@ -54,10 +56,16 @@ def _get_candidate(db: Session, candidate_id: int) -> Candidate:
 
 @job_router.get("/candidates", response_model=list[CandidateOut])
 def list_candidates(job_id: int, db: Session = Depends(get_db)):
-    _get_job(db, job_id)
-    return db.scalars(
+    """Ranked (eligible + screened) candidates first, then everyone else, newest first."""
+    job = _get_job(db, job_id)
+    ranked = ranked_candidates(db, job)
+    for position, candidate in enumerate(ranked, start=1):
+        candidate.rank = position
+    ranked_ids = {c.id for c in ranked}
+    others = db.scalars(
         select(Candidate).where(Candidate.job_id == job_id).order_by(Candidate.applied_at.desc())
     ).all()
+    return ranked + [c for c in others if c.id not in ranked_ids]
 
 
 @job_router.post("/candidates/upload", response_model=ImportSummary)
