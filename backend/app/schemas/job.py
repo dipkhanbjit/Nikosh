@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 EmploymentType = Literal["full_time", "part_time", "contract", "internship"]
 JobStatus = Literal["draft", "approved", "posted", "closed"]
@@ -22,6 +22,7 @@ class JobCreate(BaseModel):
     min_experience_years: int | None = Field(default=None, ge=0, le=50)
     description: str | None = None
     requirements: list[Requirement] = []
+    application_deadline: date | None = None
 
 
 class JobUpdate(BaseModel):
@@ -33,6 +34,7 @@ class JobUpdate(BaseModel):
     description: str | None = None
     requirements: list[Requirement] | None = None
     status: JobStatus | None = None
+    application_deadline: date | None = None
 
 
 class JobOut(BaseModel):
@@ -53,6 +55,15 @@ class JobOut(BaseModel):
     telegram_url: str | None
     telegram_error: str | None
     telegram_posted_at: datetime | None
+    application_deadline: datetime | None
+    form_url: str | None
+    form_error: str | None
+    form_closed_at: datetime | None
     created_by: int
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def applications_closed(self) -> bool:
+        return self.application_deadline is not None and datetime.now(timezone.utc) > self.application_deadline

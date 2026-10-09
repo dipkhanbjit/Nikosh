@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { createJob, EMPLOYMENT_TYPES, updateJob } from "../api/jobs";
+import { createJob, deadlineInputValue, EMPLOYMENT_TYPES, updateJob } from "../api/jobs";
 import { Alert, Button, Input, Modal } from "./ui";
 
 const EMPTY = {
@@ -9,6 +9,7 @@ const EMPTY = {
   location: "",
   employment_type: "full_time",
   min_experience_years: "",
+  application_deadline: "",
 };
 
 export default function JobFormModal({ open, job, onClose, onSaved }) {
@@ -28,6 +29,7 @@ export default function JobFormModal({ open, job, onClose, onSaved }) {
             location: job.location ?? "",
             employment_type: job.employment_type,
             min_experience_years: job.min_experience_years ?? "",
+            application_deadline: deadlineInputValue(job.application_deadline),
           }
         : EMPTY
     );
@@ -46,6 +48,7 @@ export default function JobFormModal({ open, job, onClose, onSaved }) {
       employment_type: form.employment_type,
       min_experience_years:
         form.min_experience_years === "" ? null : Number(form.min_experience_years),
+      application_deadline: form.application_deadline || null,
     };
     try {
       const saved = isEdit ? await updateJob(job.id, body) : await createJob(body);
@@ -127,6 +130,19 @@ export default function JobFormModal({ open, job, onClose, onSaved }) {
             value={form.min_experience_years}
             onChange={handleChange}
           />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Input
+            label="Application Deadline"
+            name="application_deadline"
+            type="date"
+            value={form.application_deadline}
+            onChange={handleChange}
+          />
+          <p className="text-xs text-gray-500">
+            Applications are accepted until 11:59 PM on this date. If left empty, it is set to 21
+            days after posting.
+          </p>
         </div>
       </form>
     </Modal>

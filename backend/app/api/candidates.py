@@ -6,6 +6,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.services.ranking import ranked_candidates
+
 from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
@@ -17,10 +19,13 @@ from app.schemas.candidate import (
     ImportSummary,
     NewApplications,
     ParseSummary,
+    ScreeningSummary,
 )
 from app.services.cv_extraction import extract_pending
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
+from app.services.cv_matching import screen_pending
 from app.services.cv_parsing import parse_pending
+from app.services.deadlines import applications_closed, deadline_label
 from app.services.mcp_client import MCPToolError
 from app.services.storage import delete_file
 
@@ -51,15 +56,23 @@ def _get_candidate(db: Session, candidate_id: int) -> Candidate:
 
 @job_router.get("/candidates", response_model=list[CandidateOut])
 def list_candidates(job_id: int, db: Session = Depends(get_db)):
-    _get_job(db, job_id)
-    return db.scalars(
+    """Ranked (eligible + screened) candidates first, then everyone else, newest first."""
+    job = _get_job(db, job_id)
+    ranked = ranked_candidates(db, job)
+    for position, candidate in enumerate(ranked, start=1):
+        candidate.rank = position
+    ranked_ids = {c.id for c in ranked}
+    others = db.scalars(
         select(Candidate).where(Candidate.job_id == job_id).order_by(Candidate.applied_at.desc())
     ).all()
+    return ranked + [c for c in others if c.id not in ranked_ids]
 
 
 @job_router.post("/candidates/upload", response_model=ImportSummary)
 def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
     job = _get_job(db, job_id, for_intake=True)
+    if applications_closed(job):
+        raise AppException(f"Applications closed on {deadline_label(job)}", 409, "APPLICATIONS_CLOSED")
     if len(files) > MAX_FILES_PER_UPLOAD:
         raise AppException(f"Upload at most {MAX_FILES_PER_UPLOAD} files at once", 400, "TOO_MANY_FILES")
     results = [add_uploaded_cv(db, job, f.filename, f.file.read()) for f in files]
@@ -68,7 +81,7 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
 
 @job_router.post("/candidates/extract", response_model=ExtractionSummary)
 def extract_job_cvs(job_id: int, db: Session = Depends(get_db)):
-    """Extract text for candidates that are pending or failed (e.g. imported before 5.3.3)."""
+    """Extract text for candidates that are pending or failed."""
     return extract_pending(db, _get_job(db, job_id))
 
 
@@ -76,6 +89,12 @@ def extract_job_cvs(job_id: int, db: Session = Depends(get_db)):
 def parse_job_cvs(job_id: int, db: Session = Depends(get_db)):
     """Parse extracted CVs into structured profiles (pending or previously failed)."""
     return parse_pending(db, _get_job(db, job_id))
+
+
+@job_router.post("/candidates/screen", response_model=ScreeningSummary)
+def screen_job_cvs(job_id: int, db: Session = Depends(get_db)):
+    """Match parsed CVs against the job requirements (replaced by the background workflow in 5.4.3)."""
+    return screen_pending(db, _get_job(db, job_id))
 
 
 @job_router.get("/applications/new", response_model=NewApplications)

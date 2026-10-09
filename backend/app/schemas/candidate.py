@@ -15,10 +15,15 @@ class CandidateOut(BaseModel):
     cv_filename: str | None
     source: str
     status: str
+    rejection_reason: str | None
+    match_score: float | None = None
+    rank: int | None = None
     extraction_status: str
     extraction_error: str | None
     parse_status: str
     parse_error: str | None
+    screening_status: str
+    screening_error: str | None
     applied_at: datetime | None
     created_at: datetime
 
@@ -63,6 +68,12 @@ class ParseSummary(BaseModel):
     failed: int
 
 
+class ScreeningSummary(BaseModel):
+    processed: int
+    screened: int
+    failed: int
+
+
 class CandidateText(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -72,3 +83,4 @@ class CandidateText(BaseModel):
     cv_text: str | None
     parse_status: str
     profile: dict | None
+    screening: list[dict] | None

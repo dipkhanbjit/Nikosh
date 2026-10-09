@@ -26,3 +26,6 @@ export const getCVText = (id) => apiRequest(`/candidates/${id}/text`);
 
 export const parseCVs = (jobId) =>
   apiRequest(`/jobs/${jobId}/candidates/parse`, { method: "POST" });
+
+export const screenCVs = (jobId) =>
+  apiRequest(`/jobs/${jobId}/candidates/screen`, { method: "POST" });

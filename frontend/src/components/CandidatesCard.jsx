@@ -9,9 +9,11 @@ import {
   getCVText,
   listCandidates,
   parseCVs,
+  screenCVs,
   syncApplications,
   uploadCVs,
 } from "../api/candidates";
+import { formatDeadline } from "../api/jobs";
 import CandidateProfileModal from "./CandidateProfileModal";
 import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
@@ -25,9 +27,12 @@ const formatDateTime = (value) =>
 function analysisState(c) {
   if (c.extraction_status === "failed") return { color: "red", label: "Text failed", tip: c.extraction_error };
   if (c.extraction_status !== "extracted") return { color: "gray", label: "Pending" };
-  if (c.parse_status === "parsed") return { color: "green", label: "Parsed", clickable: true };
   if (c.parse_status === "failed") return { color: "red", label: "Parse failed", tip: c.parse_error, clickable: true };
-  return { color: "gray", label: "Pending", clickable: true };
+  if (c.parse_status !== "parsed") return { color: "gray", label: "Pending", clickable: true };
+  if (c.screening_status === "screened") return { color: "green", label: "Screened", clickable: true };
+  if (c.screening_status === "failed")
+    return { color: "red", label: "Screening failed", tip: c.screening_error, clickable: true };
+  return { color: "blue", label: "Parsed", clickable: true };
 }
 
 function ImportResults({ summary, onClose }) {
@@ -68,8 +73,11 @@ export default function CandidatesCard({ job }) {
   const [viewing, setViewing] = useState(null);
 
   const canIntake = job.status === "approved" || job.status === "posted";
+  const closed = job.applications_closed;
   const needsProcessing = candidates.some(
-    (c) => c.status === "applied" && (c.extraction_status !== "extracted" || c.parse_status !== "parsed")
+    (c) =>
+      c.status === "applied" &&
+      (c.extraction_status !== "extracted" || c.parse_status !== "parsed" || c.screening_status !== "screened")
   );
 
   const refresh = useCallback(() => {
@@ -120,9 +128,11 @@ export default function CandidatesCard({ job }) {
     run(setProcessing, async () => {
       const text = await extractCVs(job.id);
       const parsed = await parseCVs(job.id);
-      const failed = text.failed + parsed.failed;
+      const screened = await screenCVs(job.id);
+      const failed = text.failed + parsed.failed + screened.failed;
       setNotice(
-        `Text extracted: ${text.extracted} · Profiles parsed: ${parsed.parsed}${failed ? ` · Failed: ${failed}` : ""}`
+        `Text extracted: ${text.extracted} · Profiles parsed: ${parsed.parsed} · Screened: ${screened.screened}` +
+          (failed ? ` · Failed: ${failed}` : "")
       );
     });
 
@@ -184,7 +194,7 @@ export default function CandidatesCard({ job }) {
         const s = analysisState(c);
         const badge = <Badge color={s.color}>{s.label}</Badge>;
         return s.clickable ? (
-          <button type="button" onClick={() => openProfile(c)} title={s.tip || "View profile"}>
+          <button type="button" onClick={() => openProfile(c)} title={s.tip || "View details"}>
             {badge}
           </button>
         ) : (
@@ -205,7 +215,14 @@ export default function CandidatesCard({ job }) {
       label: "Status",
       render: (c) => {
         const [color, label] = STATUS_BADGE[c.status] ?? ["gray", c.status];
-        return <Badge color={color}>{label}</Badge>;
+        return (
+          <div>
+            <Badge color={color}>{label}</Badge>
+            {c.rejection_reason && (
+              <p className="mt-1 max-w-[12rem] text-xs text-red-600">{c.rejection_reason}</p>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -237,9 +254,11 @@ export default function CandidatesCard({ job }) {
                 {processing ? "Processing…" : "Process CVs"}
               </Button>
             )}
-            <Button variant="secondary" onClick={() => fileInput.current.click()} loading={uploading}>
-              Upload CVs
-            </Button>
+            {!closed && (
+              <Button variant="secondary" onClick={() => fileInput.current.click()} loading={uploading}>
+                Upload CVs
+              </Button>
+            )}
             <Button variant={newCount > 0 ? "danger" : "primary"} onClick={handleSync} loading={syncing}>
               {syncing ? "Syncing…" : newCount > 0 ? `Sync Applications (${newCount} new)` : "Sync Applications"}
             </Button>
@@ -259,6 +278,12 @@ export default function CandidatesCard({ job }) {
       <div className="flex flex-col gap-4">
         {!canIntake && (
           <p className="text-sm text-gray-500">CV collection opens once the JD is approved.</p>
+        )}
+        {canIntake && closed && (
+          <Alert type="info">
+            Applications closed on {formatDeadline(job.application_deadline)}. Form submissions after the
+            deadline are rejected automatically during sync.
+          </Alert>
         )}
         {error && <Alert type="error">{error}</Alert>}
         {notice && <Alert type="success">{notice}</Alert>}

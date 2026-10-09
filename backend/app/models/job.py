@@ -32,6 +32,11 @@ class Job(TimestampMixin, Base):
     telegram_url: Mapped[str | None] = mapped_column(String(500))
     telegram_error: Mapped[str | None] = mapped_column(String(500))
     telegram_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    application_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    form_id: Mapped[str | None] = mapped_column(String(100))
+    form_url: Mapped[str | None] = mapped_column(String(500))
+    form_error: Mapped[str | None] = mapped_column(String(500))
+    form_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
     candidates: Mapped[list["Candidate"]] = relationship(

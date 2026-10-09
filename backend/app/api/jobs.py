@@ -7,7 +7,10 @@ from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Job, User
 from app.schemas.job import JobCreate, JobOut, JobUpdate
+from app.services.deadlines import end_of_day
+from app.services.form_status import update_form_state
 from app.services.job_posting import publish_job
+from app.services.mcp_client import MCPToolError, call_tool
 from app.services.storage import delete_file
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -26,7 +29,7 @@ def _normalize(title: str) -> str:
 
 
 def ensure_unique_title(db: Session, title: str, exclude_id: int | None = None) -> None:
-    """Open jobs must have unique titles, because form applications are matched by title."""
+    """Open jobs must have unique titles so posts and application forms are not confused."""
     open_jobs = db.execute(select(Job.id, Job.title).where(Job.status != "closed")).all()
     target = _normalize(title)
     if any(job_id != exclude_id and _normalize(t) == target for job_id, t in open_jobs):
@@ -45,7 +48,10 @@ def create_job(
     user: User = Depends(interviewer_only),
 ):
     ensure_unique_title(db, payload.title)
-    job = Job(**payload.model_dump(), created_by=user.id)
+    data = payload.model_dump()
+    deadline = data.pop("application_deadline")
+    job = Job(**data, created_by=user.id)
+    job.application_deadline = end_of_day(deadline) if deadline else None
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -70,14 +76,21 @@ def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db)):
     if new_title and _normalize(new_title) != _normalize(job.title):
         if job.status == "posted":
             raise AppException(
-                "The title of a posted job cannot be changed, because applications are matched by title",
+                "The title of a posted job cannot be changed, because the posts and the "
+                "application form already use it",
                 409,
                 "JOB_ALREADY_POSTED",
             )
         ensure_unique_title(db, new_title, exclude_id=job.id)
+    deadline_changed = "application_deadline" in changes
+    if deadline_changed:
+        deadline = changes.pop("application_deadline")
+        job.application_deadline = end_of_day(deadline) if deadline else None
     for field, value in changes.items():
         setattr(job, field, value)
     db.commit()
+    if deadline_changed:
+        update_form_state(db, job)  # close or reopen the form right away
     db.refresh(job)
     return job
 
@@ -85,6 +98,11 @@ def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db)):
 @router.delete("/{job_id}", status_code=204, dependencies=[Depends(interviewer_only)])
 def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = get_job_or_404(db, job_id)
+    if job.form_id and not job.form_closed_at:
+        try:
+            call_tool("set_form_open", form_id=job.form_id, accepting=False)
+        except MCPToolError:
+            pass  # the job is deleted anyway; the failure is logged by the MCP client
     cv_paths = [c.cv_file_path for c in job.candidates]
     db.delete(job)
     db.commit()

@@ -7,7 +7,9 @@ from mcp.server.fastmcp import FastMCP
 from app.core.config import settings
 from app.core.logging_config import setup_logging
 from app.services.blogger import BloggerError, build_post_html, publish_post
-from app.services.google_forms import GoogleFormsError, download_file, list_applications
+from app.services.job_forms import FormError, create_job_form as create_form
+from app.services.job_forms import download_file, list_responses
+from app.services.job_forms import set_form_open as set_open
 from app.services.telegram import PostingError, announce_job
 
 setup_logging("mcp_server.log", console=False)
@@ -17,11 +19,11 @@ mcp = FastMCP("nikosh-tools")
 
 
 @mcp.tool()
-def publish_to_blogger(title: str, description: str, apply_url: str = "") -> str:
+def publish_to_blogger(title: str, description: str, apply_url: str = "", deadline: str = "") -> str:
     """Publish a job description (Markdown) to the Nirvik Careers blog with an
-    Apply section linking to the application form. Returns the post URL."""
+    Apply section linking to the application form and showing the deadline. Returns the post URL."""
     try:
-        url = publish_post(title, build_post_html(description, apply_url or None))
+        url = publish_post(title, build_post_html(description, apply_url or None, deadline or None))
     except BloggerError as exc:
         logger.error("Blogger post failed for '%s': %s", title, exc)
         raise
@@ -43,15 +45,41 @@ def publish_to_telegram(title: str, details: str, link: str, apply_url: str = ""
 
 
 @mcp.tool()
-def list_job_applications(job_title: str) -> str:
-    """List all Google Form applications submitted for a job position (matched by
-    job title). Returns a JSON array of {file_id, full_name, email, phone, submitted_at}."""
+def create_job_form(title: str, description: str) -> str:
+    """Create a dedicated Google Form for one job by copying the application template,
+    then set its title and description and open it. Returns JSON {form_id, form_url}."""
     try:
-        applications = list_applications(job_title)
-    except GoogleFormsError as exc:
-        logger.error("Listing applications failed for '%s': %s", job_title, exc)
+        form = create_form(title, description)
+    except FormError as exc:
+        logger.error("Form creation failed for '%s': %s", title, exc)
         raise
-    logger.info("Listed %s application(s) for '%s'", len(applications), job_title)
+    logger.info("Form created for '%s': %s", title, form["form_id"])
+    return json.dumps(form)
+
+
+@mcp.tool()
+def set_form_open(form_id: str, accepting: bool) -> str:
+    """Open (accepting=true) or close (accepting=false) a job's Google Form for new responses."""
+    try:
+        set_open(form_id, accepting)
+    except FormError as exc:
+        logger.error("Changing form %s failed: %s", form_id, exc)
+        raise
+    state = "opened" if accepting else "closed"
+    logger.info("Form %s %s", form_id, state)
+    return state
+
+
+@mcp.tool()
+def list_job_applications(form_id: str) -> str:
+    """List all applications submitted to a job's Google Form. Returns a JSON array of
+    {response_id, full_name, email, phone, cv_file_id, cv_filename, submitted_at}."""
+    try:
+        applications = list_responses(form_id)
+    except FormError as exc:
+        logger.error("Listing applications failed for form %s: %s", form_id, exc)
+        raise
+    logger.info("Listed %s application(s) for form %s", len(applications), form_id)
     return json.dumps(applications)
 
 
@@ -61,7 +89,7 @@ def download_cv(file_id: str) -> str:
     Returns JSON {filename, path, size}."""
     try:
         filename, content = download_file(file_id)
-    except GoogleFormsError as exc:
+    except FormError as exc:
         logger.error("CV download failed for file %s: %s", file_id, exc)
         raise
     incoming = Path(settings.cv_storage_dir) / "incoming"
