@@ -19,10 +19,17 @@ import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
 const POLL_INTERVAL_MS = 30000;
 const SOURCE_BADGE = { form: ["blue", "Google Form"], upload: ["gray", "Upload"] };
-const STATUS_BADGE = { applied: ["green", "Applied"], rejected: ["red", "Rejected"] };
+const STATUS_STYLE = {
+  applied: ["bg-green-100 text-green-700", "Applied"],
+  excluded: ["bg-amber-100 text-amber-800", "Excluded"],
+  rejected: ["bg-red-100 text-red-700", "Rejected"],
+};
 
 const formatDateTime = (value) =>
   new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+export const scoreColor = (score) =>
+  score >= 70 ? "bg-green-500" : score >= 40 ? "bg-amber-500" : "bg-red-500";
 
 function analysisState(c) {
   if (c.extraction_status === "failed") return { color: "red", label: "Text failed", tip: c.extraction_error };
@@ -33,6 +40,31 @@ function analysisState(c) {
   if (c.screening_status === "failed")
     return { color: "red", label: "Screening failed", tip: c.screening_error, clickable: true };
   return { color: "blue", label: "Parsed", clickable: true };
+}
+
+function StatusBadge({ status }) {
+  const [style, label] = STATUS_STYLE[status] ?? ["bg-gray-100 text-gray-700", status];
+  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`}>{label}</span>;
+}
+
+function ScoreCell({ candidate }) {
+  const { match_score: score, match_counts: counts } = candidate;
+  if (score == null) return "—";
+  return (
+    <div className="w-36">
+      <div className="flex items-center gap-2">
+        <span className="w-12 text-sm font-semibold text-gray-800">{score.toFixed(1)}%</span>
+        <div className="h-1.5 flex-1 rounded-full bg-gray-100">
+          <div className={`h-1.5 rounded-full ${scoreColor(score)}`} style={{ width: `${score}%` }} />
+        </div>
+      </div>
+      {counts && (
+        <p className="mt-1 text-xs text-gray-500">
+          {counts.met} met · {counts.partial} partial · {counts.unmet} unmet
+        </p>
+      )}
+    </div>
+  );
 }
 
 function ImportResults({ summary, onClose }) {
@@ -74,6 +106,7 @@ export default function CandidatesCard({ job }) {
 
   const canIntake = job.status === "approved" || job.status === "posted";
   const closed = job.applications_closed;
+  const rankedCount = candidates.filter((c) => c.rank != null).length;
   const needsProcessing = candidates.some(
     (c) =>
       c.status === "applied" &&
@@ -158,34 +191,23 @@ export default function CandidatesCard({ job }) {
 
   const columns = [
     {
+      key: "rank",
+      label: "Rank",
+      render: (c) =>
+        c.rank != null ? <span className="text-sm font-bold text-indigo-700">#{c.rank}</span> : "—",
+    },
+    {
       key: "name",
       label: "Candidate",
       render: (c) => (
         <div>
           <p className="font-medium text-gray-800">{c.full_name || "Name not found"}</p>
           <p className="text-xs text-gray-500">{c.email || c.cv_filename}</p>
+          {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
         </div>
       ),
     },
-    { key: "phone", label: "Phone", render: (c) => c.phone || "—" },
-    {
-      key: "cv",
-      label: "CV",
-      render: (c) =>
-        c.status !== "rejected" && c.cv_filename ? (
-          <a
-            href={cvUrl(c.id)}
-            target="_blank"
-            rel="noreferrer"
-            className="block max-w-[14rem] truncate text-indigo-600 hover:underline"
-            title={c.cv_filename}
-          >
-            {c.cv_filename}
-          </a>
-        ) : (
-          "—"
-        ),
-    },
+    { key: "score", label: "Match Score", render: (c) => <ScoreCell candidate={c} /> },
     {
       key: "analysis",
       label: "CV Analysis",
@@ -203,26 +225,43 @@ export default function CandidatesCard({ job }) {
       },
     },
     {
+      key: "cv",
+      label: "CV",
+      render: (c) =>
+        c.status !== "rejected" && c.cv_filename ? (
+          <a
+            href={cvUrl(c.id)}
+            target="_blank"
+            rel="noreferrer"
+            className="block max-w-[10rem] truncate text-indigo-600 hover:underline"
+            title={c.cv_filename}
+          >
+            {c.cv_filename}
+          </a>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (c) => (
+        <div>
+          <StatusBadge status={c.status} />
+          {c.rejection_reason && (
+            <p className={`mt-1 max-w-[14rem] text-xs ${c.status === "excluded" ? "text-amber-700" : "text-red-600"}`}>
+              {c.rejection_reason}
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
       key: "source",
       label: "Source",
       render: (c) => {
         const [color, label] = SOURCE_BADGE[c.source] ?? ["gray", c.source];
         return <Badge color={color}>{label}</Badge>;
-      },
-    },
-    {
-      key: "status",
-      label: "Status",
-      render: (c) => {
-        const [color, label] = STATUS_BADGE[c.status] ?? ["gray", c.status];
-        return (
-          <div>
-            <Badge color={color}>{label}</Badge>
-            {c.rejection_reason && (
-              <p className="mt-1 max-w-[12rem] text-xs text-red-600">{c.rejection_reason}</p>
-            )}
-          </div>
-        );
       },
     },
     {
@@ -245,7 +284,7 @@ export default function CandidatesCard({ job }) {
 
   return (
     <Card
-      title={`Candidates (${candidates.length})`}
+      title={`Candidates (${candidates.length})${rankedCount ? ` · ${rankedCount} ranked` : ""}`}
       actions={
         canIntake && (
           <div className="flex gap-2">
