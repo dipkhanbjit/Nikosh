@@ -21,7 +21,7 @@ def _client() -> MultiServerMCPClient:
         "nikosh": {
             "transport": "stdio",
             "command": sys.executable,
-            "args": ["-m", "app.mcp_server.server"],
+            "args": ["-m", "app.mcp_server.server"], 
             "cwd": str(BACKEND_DIR),
             "env": dict(os.environ),
         }

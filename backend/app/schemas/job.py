@@ -56,6 +56,9 @@ class JobOut(BaseModel):
     telegram_error: str | None
     telegram_posted_at: datetime | None
     application_deadline: datetime | None
+    form_url: str | None
+    form_error: str | None
+    form_closed_at: datetime | None
     created_by: int
     created_at: datetime
     updated_at: datetime
