@@ -5,11 +5,10 @@ import {
   countNewApplications,
   cvUrl,
   deleteCandidate,
-  extractCVs,
   getCVText,
+  getScreening,
   listCandidates,
-  parseCVs,
-  screenCVs,
+  startScreening,
   syncApplications,
   uploadCVs,
 } from "../api/candidates";
@@ -18,6 +17,7 @@ import CandidateProfileModal from "./CandidateProfileModal";
 import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
 const POLL_INTERVAL_MS = 30000;
+const PROGRESS_INTERVAL_MS = 2000;
 const SOURCE_BADGE = { form: ["blue", "Google Form"], upload: ["gray", "Upload"] };
 const STATUS_STYLE = {
   applied: ["bg-green-100 text-green-700", "Applied"],
@@ -68,6 +68,24 @@ function ScoreCell({ candidate }) {
           {counts.met} met · {counts.partial} partial · {counts.unmet} unmet
         </p>
       )}
+    </div>
+  );
+}
+
+function ScreeningProgress({ run }) {
+  const percent = run.total ? Math.round((run.processed / run.total) * 100) : 0;
+  return (
+    <div className="rounded-md border border-indigo-100 bg-indigo-50 p-3">
+      <div className="flex justify-between text-sm">
+        <span className="font-medium text-indigo-800">
+          {run.total ? `Screening CVs… ${run.processed} of ${run.total}` : "Preparing screening…"}
+        </span>
+        {run.total > 0 && <span className="text-indigo-700">{percent}%</span>}
+      </div>
+      <div className="mt-2 h-2 rounded-full bg-indigo-100">
+        <div className="h-2 rounded-full bg-indigo-600 transition-all" style={{ width: `${percent}%` }} />
+      </div>
+      {run.failed > 0 && <p className="mt-2 text-xs text-red-600">{run.failed} failed so far</p>}
     </div>
   );
 }
@@ -124,7 +142,7 @@ export default function CandidatesCard({ job }) {
   const [newCount, setNewCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [processing, setProcessing] = useState(false);
+  const [run, setRun] = useState(null);
   const [summary, setSummary] = useState(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -133,6 +151,7 @@ export default function CandidatesCard({ job }) {
 
   const canIntake = job.status === "approved" || job.status === "posted";
   const closed = job.applications_closed;
+  const screening = run?.status === "running";
   const needsProcessing = candidates.some(
     (c) =>
       c.status === "applied" &&
@@ -148,17 +167,23 @@ export default function CandidatesCard({ job }) {
   const counts = Object.fromEntries(TABS.map((t) => [t.key, lists[t.key].length]));
   const activeTab = TABS.find((t) => t.key === tab);
 
-  const refresh = useCallback(() => {
+  const loadCandidates = useCallback(() => {
     listCandidates(job.id).then(setCandidates).catch((err) => setError(err.message));
+  }, [job.id]);
+
+  const refresh = useCallback(() => {
+    loadCandidates();
     if (canIntake) {
       countNewApplications(job.id)
         .then((r) => setNewCount(r.count))
         .catch(() => {});
     }
-  }, [job.id, canIntake]);
+  }, [job.id, canIntake, loadCandidates]);
 
+  // Initial load + polling for new form applications
   useEffect(() => {
     refresh();
+    getScreening(job.id).then(setRun).catch(() => {});
     if (!canIntake) return undefined;
     const timer = setInterval(() => {
       countNewApplications(job.id)
@@ -168,7 +193,29 @@ export default function CandidatesCard({ job }) {
     return () => clearInterval(timer);
   }, [job.id, canIntake, refresh]);
 
-  const run = async (setBusy, action) => {
+  // While a screening run is in progress, poll its status and refresh the table
+  useEffect(() => {
+    if (!screening) return undefined;
+    const timer = setInterval(async () => {
+      try {
+        const latest = await getScreening(job.id);
+        setRun(latest);
+        loadCandidates();
+        if (latest && latest.status === "completed") {
+          setNotice(
+            `Screening finished: ${latest.succeeded} screened` + (latest.failed ? ` · ${latest.failed} failed` : "")
+          );
+        } else if (latest && latest.status === "failed") {
+          setError(latest.error || "Screening failed");
+        }
+      } catch {
+        // keep polling; a temporary network error should not stop progress updates
+      }
+    }, PROGRESS_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [screening, job.id, loadCandidates]);
+
+  const run_ = async (setBusy, action) => {
     setBusy(true);
     setError("");
     setNotice("");
@@ -183,26 +230,25 @@ export default function CandidatesCard({ job }) {
     }
   };
 
-  const handleSync = () => run(setSyncing, async () => setSummary(await syncApplications(job.id)));
+  const handleSync = () => run_(setSyncing, async () => setSummary(await syncApplications(job.id)));
 
   const handleFiles = (e) => {
     const files = Array.from(e.target.files);
     e.target.value = "";
     if (files.length === 0) return;
-    run(setUploading, async () => setSummary(await uploadCVs(job.id, files)));
+    run_(setUploading, async () => setSummary(await uploadCVs(job.id, files)));
   };
 
-  const handleProcess = () =>
-    run(setProcessing, async () => {
-      const text = await extractCVs(job.id);
-      const parsed = await parseCVs(job.id);
-      const screened = await screenCVs(job.id);
-      const failed = text.failed + parsed.failed + screened.failed;
-      setNotice(
-        `Text extracted: ${text.extracted} · Profiles parsed: ${parsed.parsed} · Screened: ${screened.screened}` +
-          (failed ? ` · Failed: ${failed}` : "")
-      );
-    });
+  const handleProcess = async () => {
+    setError("");
+    setNotice("");
+    setSummary(null);
+    try {
+      setRun(await startScreening(job.id));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const openProfile = async (candidate) => {
     setViewing({ candidate, data: null });
@@ -262,7 +308,7 @@ export default function CandidatesCard({ job }) {
       key: "cv",
       label: "CV",
       render: (c) =>
-        c.cv_file_path !== null && c.cv_filename && c.status !== "rejected" ? (
+        c.cv_filename && c.status !== "rejected" ? (
           <a
             href={cvUrl(c.id)}
             target="_blank"
@@ -325,9 +371,9 @@ export default function CandidatesCard({ job }) {
       actions={
         canIntake && (
           <div className="flex gap-2">
-            {needsProcessing && (
-              <Button variant="secondary" onClick={handleProcess} loading={processing}>
-                {processing ? "Processing…" : "Process CVs"}
+            {(needsProcessing || screening) && (
+              <Button variant="secondary" onClick={handleProcess} loading={screening}>
+                {screening ? `Screening ${run.processed}/${run.total || "…"}` : "Process CVs"}
               </Button>
             )}
             {!closed && (
@@ -361,6 +407,7 @@ export default function CandidatesCard({ job }) {
             deadline are rejected automatically during sync.
           </Alert>
         )}
+        {screening && <ScreeningProgress run={run} />}
         {error && <Alert type="error">{error}</Alert>}
         {notice && <Alert type="success">{notice}</Alert>}
         {summary && <ImportResults summary={summary} onClose={() => setSummary(null)} />}
