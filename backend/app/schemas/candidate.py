@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class CandidateOut(BaseModel):
@@ -26,6 +26,19 @@ class CandidateOut(BaseModel):
     screening_error: str | None
     applied_at: datetime | None
     created_at: datetime
+    screening: list[dict] | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def match_counts(self) -> dict | None:
+        """Number of requirements rated met / partial / unmet (full details come from /text)."""
+        if not self.screening:
+            return None
+        counts = {"met": 0, "partial": 0, "unmet": 0}
+        for match in self.screening:
+            if match.get("rating") in counts:
+                counts[match["rating"]] += 1
+        return counts
 
 
 class ImportResult(BaseModel):

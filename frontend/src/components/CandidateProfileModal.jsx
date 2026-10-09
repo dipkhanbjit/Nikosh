@@ -8,6 +8,15 @@ const RATINGS = {
   unmet: { label: "Unmet", className: "bg-red-100 text-red-700" },
 };
 
+const STATUS_STYLE = {
+  applied: ["bg-green-100 text-green-700", "Eligible"],
+  excluded: ["bg-amber-100 text-amber-800", "Excluded"],
+  rejected: ["bg-red-100 text-red-700", "Rejected"],
+};
+
+const scoreColor = (score) =>
+  score >= 70 ? "bg-green-500" : score >= 40 ? "bg-amber-500" : "bg-red-500";
+
 function Section({ title, children }) {
   return (
     <div>
@@ -27,6 +36,38 @@ function RatingBadge({ rating }) {
 }
 
 const period = (start, end) => [start || "?", end || "?"].join(" – ");
+
+function ScoreSummary({ candidate }) {
+  const score = candidate.match_score;
+  const [style, label] = STATUS_STYLE[candidate.status] ?? ["bg-gray-100 text-gray-700", candidate.status];
+  return (
+    <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+      <div className="flex items-center gap-6">
+        <div>
+          <p className="text-xs text-gray-500">Rank</p>
+          <p className="text-2xl font-bold text-indigo-700">{candidate.rank != null ? `#${candidate.rank}` : "—"}</p>
+        </div>
+        <div className="flex-1">
+          <div className="flex items-baseline justify-between">
+            <p className="text-xs text-gray-500">Match Score</p>
+            <p className="text-lg font-semibold text-gray-800">{score != null ? `${score.toFixed(1)}%` : "—"}</p>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-gray-200">
+            {score != null && (
+              <div className={`h-2 rounded-full ${scoreColor(score)}`} style={{ width: `${score}%` }} />
+            )}
+          </div>
+        </div>
+        <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`}>{label}</span>
+      </div>
+      {candidate.rejection_reason && (
+        <p className={`mt-3 text-sm ${candidate.status === "excluded" ? "text-amber-700" : "text-red-600"}`}>
+          {candidate.rejection_reason}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function RequirementMatch({ screening }) {
   const count = (rating) => screening.filter((m) => m.rating === rating).length;
@@ -138,6 +179,7 @@ function ProfileView({ profile }) {
 
 export default function CandidateProfileModal({ viewing, onClose }) {
   const [showText, setShowText] = useState(false);
+  const candidate = viewing?.candidate;
   const data = viewing?.data;
   const hasProfile = Boolean(data?.profile);
   const hasScreening = Array.isArray(data?.screening) && data.screening.length > 0;
@@ -150,7 +192,7 @@ export default function CandidateProfileModal({ viewing, onClose }) {
   return (
     <Modal
       open={Boolean(viewing)}
-      title={viewing?.candidate.full_name || viewing?.candidate.cv_filename || "Candidate"}
+      title={candidate?.full_name || candidate?.cv_filename || "Candidate"}
       onClose={close}
       footer={
         <>
@@ -171,6 +213,7 @@ export default function CandidateProfileModal({ viewing, onClose }) {
         </div>
       ) : hasProfile && !showText ? (
         <div className="flex max-h-[60vh] flex-col gap-6 overflow-y-auto pr-1">
+          {hasScreening && <ScoreSummary candidate={candidate} />}
           {hasScreening && <RequirementMatch screening={data.screening} />}
           <ProfileView profile={data.profile} />
         </div>
