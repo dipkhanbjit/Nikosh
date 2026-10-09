@@ -97,3 +97,18 @@ class CandidateText(BaseModel):
     parse_status: str
     profile: dict | None
     screening: list[dict] | None
+
+
+class ScreeningRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    job_id: int
+    status: str
+    total: int
+    processed: int
+    succeeded: int
+    failed: int
+    error: str | None
+    started_at: datetime
+    finished_at: datetime | None

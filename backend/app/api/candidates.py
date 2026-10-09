@@ -1,12 +1,10 @@
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-from app.services.ranking import ranked_candidates
 
 from app.api.deps import require_role
 from app.core.database import get_db
@@ -15,18 +13,15 @@ from app.models import Candidate, Job
 from app.schemas.candidate import (
     CandidateOut,
     CandidateText,
-    ExtractionSummary,
     ImportSummary,
     NewApplications,
-    ParseSummary,
-    ScreeningSummary,
+    ScreeningRunOut,
 )
-from app.services.cv_extraction import extract_pending
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
-from app.services.cv_matching import screen_pending
-from app.services.cv_parsing import parse_pending
 from app.services.deadlines import applications_closed, deadline_label
 from app.services.mcp_client import MCPToolError
+from app.services.ranking import ranked_candidates
+from app.services.screening_runs import execute_run, latest_run, start_screening
 from app.services.storage import delete_file
 
 MAX_FILES_PER_UPLOAD = 20
@@ -79,22 +74,20 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
     return ImportSummary.from_results(results)
 
 
-@job_router.post("/candidates/extract", response_model=ExtractionSummary)
-def extract_job_cvs(job_id: int, db: Session = Depends(get_db)):
-    """Extract text for candidates that are pending or failed."""
-    return extract_pending(db, _get_job(db, job_id))
+@job_router.post("/screening", response_model=ScreeningRunOut, status_code=202)
+def start_job_screening(job_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Start the LangGraph screening workflow in the background; returns the run to poll."""
+    job = _get_job(db, job_id)
+    run = start_screening(db, job)
+    background_tasks.add_task(execute_run, run.id, job.id)
+    return run
 
 
-@job_router.post("/candidates/parse", response_model=ParseSummary)
-def parse_job_cvs(job_id: int, db: Session = Depends(get_db)):
-    """Parse extracted CVs into structured profiles (pending or previously failed)."""
-    return parse_pending(db, _get_job(db, job_id))
-
-
-@job_router.post("/candidates/screen", response_model=ScreeningSummary)
-def screen_job_cvs(job_id: int, db: Session = Depends(get_db)):
-    """Match parsed CVs against the job requirements (replaced by the background workflow in 5.4.3)."""
-    return screen_pending(db, _get_job(db, job_id))
+@job_router.get("/screening", response_model=ScreeningRunOut | None)
+def get_job_screening(job_id: int, db: Session = Depends(get_db)):
+    """Latest screening run of the job (progress while running), or null if none yet."""
+    _get_job(db, job_id)
+    return latest_run(db, job_id)
 
 
 @job_router.get("/applications/new", response_model=NewApplications)
