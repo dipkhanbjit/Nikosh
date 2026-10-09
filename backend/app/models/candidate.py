@@ -22,6 +22,7 @@ class Candidate(TimestampMixin, Base):
     phone: Mapped[str | None] = mapped_column(String(50))
     cv_file_path: Mapped[str | None] = mapped_column(String(500))
     cv_filename: Mapped[str | None] = mapped_column(String(255))
+    cv_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     source: Mapped[str] = mapped_column(String(20), default="upload")
     source_file_id: Mapped[str | None] = mapped_column(String(200), unique=True)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
