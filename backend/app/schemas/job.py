@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 EmploymentType = Literal["full_time", "part_time", "contract", "internship"]
 JobStatus = Literal["draft", "approved", "posted", "closed"]
@@ -67,3 +67,24 @@ class JobOut(BaseModel):
     @property
     def applications_closed(self) -> bool:
         return self.application_deadline is not None and datetime.now(timezone.utc) > self.application_deadline
+
+
+class ScoreWeights(BaseModel):
+    """Dimension weights in percent; must add up to 100."""
+
+    technical_skills: int = Field(ge=0, le=100)
+    experience: int = Field(ge=0, le=100)
+    qualifications: int = Field(ge=0, le=100)
+    cv_jd_match: int = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def check_total(self) -> "ScoreWeights":
+        if sum(self.model_dump().values()) != 100:
+            raise ValueError("Weights must add up to 100")
+        return self
+
+
+class ScoreWeightsOut(BaseModel):
+    weights: ScoreWeights
+    is_default: bool
+    recalculated: int = 0

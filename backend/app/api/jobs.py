@@ -6,7 +6,8 @@ from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Job, User
-from app.schemas.job import JobCreate, JobOut, JobUpdate
+from app.schemas.job import JobCreate, JobOut, JobUpdate, ScoreWeights, ScoreWeightsOut
+from app.services.candidate_scoring import job_weights, recalculate_job_scores
 from app.services.deadlines import end_of_day
 from app.services.form_status import update_form_state
 from app.services.job_posting import publish_job
@@ -89,7 +90,7 @@ def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db)):
     for field, value in changes.items():
         setattr(job, field, value)
     db.commit()
-    if deadline_changed:
+    if deadline_changed or "status" in changes:
         update_form_state(db, job)  # close or reopen the form right away
     db.refresh(job)
     return job
@@ -120,3 +121,19 @@ def post_job_now(job_id: int, db: Session = Depends(get_db)):
     publish_job(db, job)
     db.refresh(job)
     return job
+
+
+@router.get("/{job_id}/score-weights", response_model=ScoreWeightsOut, dependencies=[Depends(interviewer_only)])
+def get_score_weights(job_id: int, db: Session = Depends(get_db)):
+    job = get_job_or_404(db, job_id)
+    return ScoreWeightsOut(weights=job_weights(job), is_default=not job.score_weights)
+
+
+@router.put("/{job_id}/score-weights", response_model=ScoreWeightsOut, dependencies=[Depends(interviewer_only)])
+def update_score_weights(job_id: int, payload: ScoreWeights, db: Session = Depends(get_db)):
+    """Save the job's dimension weights and recalculate every overall score (no AI calls)."""
+    job = get_job_or_404(db, job_id)
+    job.score_weights = payload.model_dump()
+    db.commit()
+    count = recalculate_job_scores(db, job)
+    return ScoreWeightsOut(weights=job.score_weights, is_default=False, recalculated=count)

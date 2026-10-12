@@ -12,7 +12,7 @@ import {
   syncApplications,
   uploadCVs,
 } from "../api/candidates";
-import { formatDeadline } from "../api/jobs";
+import { formatDeadline, getScoreWeights } from "../api/jobs";
 import CandidateProfileModal from "./CandidateProfileModal";
 import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
@@ -35,6 +35,13 @@ const formatDateTime = (value) =>
 
 const scoreColor = (score) =>
   score >= 70 ? "bg-green-500" : score >= 40 ? "bg-amber-500" : "bg-red-500";
+
+const pillColor = (score) =>
+  score >= 70
+    ? "bg-green-100 text-green-800"
+    : score >= 40
+      ? "bg-amber-100 text-amber-800"
+      : "bg-red-100 text-red-700";
 
 function analysisState(c) {
   if (c.extraction_status === "failed") return { color: "red", label: "Text failed", tip: c.extraction_error };
@@ -69,6 +76,22 @@ function ScoreCell({ candidate }) {
         </p>
       )}
     </div>
+  );
+}
+
+function OverallCell({ candidate }) {
+  if (candidate.scoring_status === "failed") {
+    return (
+      <span className="text-xs font-medium text-red-600" title={candidate.scoring_error || ""}>
+        Scoring failed
+      </span>
+    );
+  }
+  if (candidate.overall_score == null) return "—";
+  return (
+    <span className={`inline-block rounded-md px-2 py-1 text-sm font-semibold ${pillColor(candidate.overall_score)}`}>
+      {candidate.overall_score.toFixed(1)}
+    </span>
   );
 }
 
@@ -155,7 +178,10 @@ export default function CandidatesCard({ job }) {
   const needsProcessing = candidates.some(
     (c) =>
       c.status === "applied" &&
-      (c.extraction_status !== "extracted" || c.parse_status !== "parsed" || c.screening_status !== "screened")
+      (c.extraction_status !== "extracted" ||
+        c.parse_status !== "parsed" ||
+        c.screening_status !== "screened" ||
+        c.scoring_status !== "scored")
   );
 
   const byStatus = (status) => candidates.filter((c) => c.status === status);
@@ -203,7 +229,7 @@ export default function CandidatesCard({ job }) {
         loadCandidates();
         if (latest && latest.status === "completed") {
           setNotice(
-            `Screening finished: ${latest.succeeded} screened` + (latest.failed ? ` · ${latest.failed} failed` : "")
+            `Screening finished: ${latest.succeeded} processed` + (latest.failed ? ` · ${latest.failed} failed` : "")
           );
         } else if (latest && latest.status === "failed") {
           setError(latest.error || "Screening failed");
@@ -215,7 +241,7 @@ export default function CandidatesCard({ job }) {
     return () => clearInterval(timer);
   }, [screening, job.id, loadCandidates]);
 
-  const run_ = async (setBusy, action) => {
+  const runAction = async (setBusy, action) => {
     setBusy(true);
     setError("");
     setNotice("");
@@ -230,13 +256,13 @@ export default function CandidatesCard({ job }) {
     }
   };
 
-  const handleSync = () => run_(setSyncing, async () => setSummary(await syncApplications(job.id)));
+  const handleSync = () => runAction(setSyncing, async () => setSummary(await syncApplications(job.id)));
 
   const handleFiles = (e) => {
     const files = Array.from(e.target.files);
     e.target.value = "";
     if (files.length === 0) return;
-    run_(setUploading, async () => setSummary(await uploadCVs(job.id, files)));
+    runAction(setUploading, async () => setSummary(await uploadCVs(job.id, files)));
   };
 
   const handleProcess = async () => {
@@ -253,7 +279,8 @@ export default function CandidatesCard({ job }) {
   const openProfile = async (candidate) => {
     setViewing({ candidate, data: null });
     try {
-      setViewing({ candidate, data: await getCVText(candidate.id) });
+      const [data, weights] = await Promise.all([getCVText(candidate.id), getScoreWeights(job.id)]);
+      setViewing({ candidate, data: { ...data, weights: weights.weights } });
     } catch (err) {
       setViewing(null);
       setError(err.message);
@@ -289,6 +316,7 @@ export default function CandidatesCard({ job }) {
       ),
     },
     score: { key: "score", label: "Match Score", render: (c) => <ScoreCell candidate={c} /> },
+    overall: { key: "overall", label: "Candidate Score", render: (c) => <OverallCell candidate={c} /> },
     analysis: {
       key: "analysis",
       label: "CV Analysis",
@@ -359,7 +387,7 @@ export default function CandidatesCard({ job }) {
   };
 
   const TAB_COLUMNS = {
-    applied: ["rank", "name", "score", "analysis", "cv", "status", "source", "applied_at", "actions"],
+    applied: ["rank", "name", "score", "overall", "analysis", "cv", "status", "source", "applied_at", "actions"],
     excluded: ["name", "score", "reason", "analysis", "cv", "source", "applied_at", "actions"],
     rejected: ["name", "reason", "source", "applied_at", "actions"],
   };
@@ -412,9 +440,15 @@ export default function CandidatesCard({ job }) {
         {notice && <Alert type="success">{notice}</Alert>}
         {summary && <ImportResults summary={summary} onClose={() => setSummary(null)} />}
         <Tabs active={tab} counts={counts} onChange={setTab} />
+        {tab === "applied" && counts.applied > 0 && (
+          <p className="text-sm text-gray-500">
+            Rank follows the requirement Match Score. Candidate Score is the separate weighted assessment
+            (see Scoring Weights).
+          </p>
+        )}
         {tab === "excluded" && counts.excluded > 0 && (
           <p className="text-sm text-gray-500">
-            These candidates did not meet at least one mandatory requirement, so they are not ranked.
+            These candidates did not meet at least one mandatory requirement, so they are not ranked or scored.
           </p>
         )}
         <Table columns={columns} data={lists[tab]} emptyMessage={activeTab.empty} />

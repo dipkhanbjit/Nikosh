@@ -6,6 +6,7 @@ import CandidatesCard from "../components/CandidatesCard";
 import JobFormModal from "../components/JobFormModal";
 import MarkdownView from "../components/MarkdownView";
 import PostingCard from "../components/PostingCard";
+import ScoringWeightsCard from "../components/ScoringWeightsCard";
 import { Alert, Badge, Button, Card, PageHeader, Spinner } from "../components/ui";
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -61,6 +62,7 @@ export default function JobDetail() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState("");
   const [editOpen, setEditOpen] = useState(false);
+  const [scoresVersion, setScoresVersion] = useState(0);
 
   useEffect(() => {
     getJob(id).then(setJob).catch((err) => setError(err.message));
@@ -145,11 +147,15 @@ export default function JobDetail() {
               </div>
             )}
           </Card>
+
+          {job.requirements.length > 0 && (
+            <ScoringWeightsCard job={job} onSaved={() => setScoresVersion((v) => v + 1)} />
+          )}
         </div>
       </div>
 
       <div className="mt-6">
-        <CandidatesCard job={job} />
+        <CandidatesCard key={scoresVersion} job={job} />
       </div>
 
       <JobFormModal

@@ -17,6 +17,9 @@ class CandidateOut(BaseModel):
     status: str
     rejection_reason: str | None
     match_score: float | None = None
+    overall_score: float | None = None
+    scoring_status: str = "pending"
+    scoring_error: str | None = None
     rank: int | None = None
     extraction_status: str
     extraction_error: str | None
@@ -97,6 +100,10 @@ class CandidateText(BaseModel):
     parse_status: str
     profile: dict | None
     screening: list[dict] | None
+    scores: dict | None = None
+    overall_score: float | None = None
+    scoring_status: str = "pending"
+    scoring_error: str | None = None
 
 
 class ScreeningRunOut(BaseModel):
