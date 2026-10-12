@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import Candidate, Job
+from app.models import Candidate, DeletedApplication, Job
 from app.services.cv_extraction import extract_candidate_text
 from app.services.cv_parsing import parse_candidate
 from app.services.deadlines import applications_closed, deadline_label
@@ -150,7 +150,7 @@ def _source_id(app: dict) -> str:
 
 
 def new_applications(db: Session, job: Job) -> list[dict]:
-    """Responses to this job's form that have not been imported yet (oldest first)."""
+    """Responses to this job's form that were neither imported nor deleted from Drive (oldest first)."""
     if not job.form_id:
         return []
     applications = json.loads(call_tool("list_job_applications", form_id=job.form_id))
@@ -160,7 +160,11 @@ def new_applications(db: Session, job: Job) -> list[dict]:
     imported = set(db.scalars(
         select(Candidate.source_file_id).where(Candidate.source_file_id.in_(ids))
     ))
-    new = [a for a in applications if _source_id(a) not in imported]
+    deleted = set(db.scalars(
+        select(DeletedApplication.source_file_id).where(DeletedApplication.source_file_id.in_(ids))
+    ))
+    skip = imported | deleted
+    new = [a for a in applications if _source_id(a) not in skip]
     return sorted(new, key=lambda a: a.get("submitted_at") or "")
 
 

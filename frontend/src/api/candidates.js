@@ -15,7 +15,8 @@ export const uploadCVs = (jobId, files) => {
   return apiRequest(`/jobs/${jobId}/candidates/upload`, { method: "POST", body: form });
 };
 
-export const deleteCandidate = (id) => apiRequest(`/candidates/${id}`, { method: "DELETE" });
+export const deleteCandidate = (id, fromDrive = false) =>
+  apiRequest(`/candidates/${id}${fromDrive ? "?drive=true" : ""}`, { method: "DELETE" });
 
 export const cvUrl = (id) => `/api/v1/candidates/${id}/cv`;
 
@@ -25,3 +26,9 @@ export const startScreening = (jobId) =>
   apiRequest(`/jobs/${jobId}/screening`, { method: "POST" });
 
 export const getScreening = (jobId) => apiRequest(`/jobs/${jobId}/screening`);
+
+export const includeCandidate = (id, reason) =>
+  apiRequest(`/candidates/${id}/include`, { method: "POST", body: { reason } });
+
+export const excludeCandidate = (id, reason) =>
+  apiRequest(`/candidates/${id}/exclude`, { method: "POST", body: { reason } });

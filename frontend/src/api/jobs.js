@@ -38,3 +38,20 @@ export const formatDeadline = (iso) =>
   });
 export const deadlineInputValue = (iso) =>
   iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }) : "";
+export const SCORE_DIMENSIONS = [
+  { key: "technical_skills", label: "Technical Skills" },
+  { key: "experience", label: "Experience" },
+  { key: "qualifications", label: "Qualifications" },
+  { key: "cv_jd_match", label: "CV–JD Match" },
+];
+
+export const DEFAULT_SCORE_WEIGHTS = {
+  technical_skills: 40,
+  experience: 25,
+  qualifications: 15,
+  cv_jd_match: 20,
+};
+
+export const getScoreWeights = (id) => apiRequest(`/jobs/${id}/score-weights`);
+export const updateScoreWeights = (id, weights) =>
+  apiRequest(`/jobs/${id}/score-weights`, { method: "PUT", body: weights });

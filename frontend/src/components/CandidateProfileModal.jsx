@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { SCORE_DIMENSIONS } from "../api/jobs";
 import { Badge, Button, Modal, Spinner } from "./ui";
 
 const RATINGS = {
@@ -14,6 +15,8 @@ const STATUS_STYLE = {
   rejected: ["bg-red-100 text-red-700", "Rejected"],
 };
 
+const OVERRIDE_LABEL = { included: "Manually included", excluded: "Manually excluded" };
+
 const scoreColor = (score) =>
   score >= 70 ? "bg-green-500" : score >= 40 ? "bg-amber-500" : "bg-red-500";
 
@@ -22,6 +25,14 @@ function Section({ title, children }) {
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
       {children}
+    </div>
+  );
+}
+
+function Bar({ value, height = "h-2" }) {
+  return (
+    <div className={`${height} rounded-full bg-gray-200`}>
+      {value != null && <div className={`${height} rounded-full ${scoreColor(value)}`} style={{ width: `${value}%` }} />}
     </div>
   );
 }
@@ -37,8 +48,8 @@ function RatingBadge({ rating }) {
 
 const period = (start, end) => [start || "?", end || "?"].join(" – ");
 
-function ScoreSummary({ candidate }) {
-  const score = candidate.match_score;
+function Summary({ candidate }) {
+  const score = candidate.overall_score;
   const [style, label] = STATUS_STYLE[candidate.status] ?? ["bg-gray-100 text-gray-700", candidate.status];
   return (
     <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
@@ -49,18 +60,22 @@ function ScoreSummary({ candidate }) {
         </div>
         <div className="flex-1">
           <div className="flex items-baseline justify-between">
-            <p className="text-xs text-gray-500">Match Score</p>
-            <p className="text-lg font-semibold text-gray-800">{score != null ? `${score.toFixed(1)}%` : "—"}</p>
+            <p className="text-xs text-gray-500">Score</p>
+            <p className="text-lg font-semibold text-gray-800">{score != null ? score.toFixed(1) : "—"}</p>
           </div>
-          <div className="mt-1 h-2 rounded-full bg-gray-200">
-            {score != null && (
-              <div className={`h-2 rounded-full ${scoreColor(score)}`} style={{ width: `${score}%` }} />
-            )}
+          <div className="mt-1">
+            <Bar value={score} />
           </div>
         </div>
         <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`}>{label}</span>
       </div>
-      {candidate.rejection_reason && (
+      {candidate.override && (
+        <p className="mt-3 text-sm text-purple-700">
+          <span className="font-medium">{OVERRIDE_LABEL[candidate.override] ?? candidate.override}:</span>{" "}
+          {candidate.override_reason}
+        </p>
+      )}
+      {!candidate.override && candidate.rejection_reason && (
         <p className={`mt-3 text-sm ${candidate.status === "excluded" ? "text-amber-700" : "text-red-600"}`}>
           {candidate.rejection_reason}
         </p>
@@ -69,23 +84,73 @@ function ScoreSummary({ candidate }) {
   );
 }
 
+function ScoreBreakdown({ data }) {
+  if (data.scoring_status === "failed") {
+    return (
+      <Section title="Score">
+        <p className="text-sm text-red-600">Scoring failed: {data.scoring_error}</p>
+      </Section>
+    );
+  }
+  if (!data.scores) return null;
+  const weights = data.weights || {};
+  return (
+    <Section title="Score">
+      <div className="rounded-md border border-gray-200">
+        <div className="flex items-center justify-between border-b border-gray-100 bg-indigo-50 p-3">
+          <div>
+            <p className="text-sm font-semibold text-indigo-900">Score</p>
+            <p className="text-xs text-indigo-700">Weighted average of the dimension scores</p>
+          </div>
+          <p className="text-3xl font-bold text-indigo-700">{data.overall_score?.toFixed(1) ?? "—"}</p>
+        </div>
+        <ul className="divide-y divide-gray-100">
+          {SCORE_DIMENSIONS.map((d) => {
+            const s = data.scores[d.key];
+            if (!s) return null;
+            const weight = weights[d.key] ?? 0;
+            const contribution = (s.score * weight) / 100;
+            return (
+              <li key={d.key} className="p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-gray-800">{d.label}</p>
+                  <p className="text-xs text-gray-500">
+                    <span className="text-sm font-semibold text-gray-800">{s.score}</span>/100 × {weight}% ={" "}
+                    <span className="font-semibold text-indigo-700">{contribution.toFixed(1)} pts</span>
+                  </p>
+                </div>
+                <div className="mt-2">
+                  <Bar value={s.score} height="h-1.5" />
+                </div>
+                <p className="mt-2 text-sm text-gray-700">{s.justification}</p>
+                {s.evidence?.length > 0 && (
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs italic text-gray-500">
+                    {s.evidence.map((e, i) => (
+                      <li key={i}>“{e}”</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </Section>
+  );
+}
+
 function RequirementMatch({ screening }) {
   const count = (rating) => screening.filter((m) => m.rating === rating).length;
   return (
-    <Section title="Requirement Match">
+    <Section title="Requirements">
       <p className="mb-2 text-sm text-gray-600">
         {count("met")} Met · {count("partial")} Partially Met · {count("unmet")} Unmet
       </p>
       <ul className="divide-y divide-gray-100 rounded-md border border-gray-200">
-        {screening.map((m) => (
-          <li key={m.id} className="p-3">
+        {screening.map((m, i) => (
+          <li key={m.id ?? i} className="p-3">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-gray-800">{m.text}</p>
-                <p className="text-xs text-gray-500">
-                  {m.mandatory ? "Mandatory" : "Preferred"} · Weight {m.weight}
-                </p>
-              </div>
+              <p className="text-sm font-medium text-gray-800">{m.text}</p>
               <RatingBadge rating={m.rating} />
             </div>
             <p className="mt-2 text-sm italic text-gray-600">{m.evidence}</p>
@@ -213,7 +278,8 @@ export default function CandidateProfileModal({ viewing, onClose }) {
         </div>
       ) : hasProfile && !showText ? (
         <div className="flex max-h-[60vh] flex-col gap-6 overflow-y-auto pr-1">
-          {hasScreening && <ScoreSummary candidate={candidate} />}
+          {hasScreening && <Summary candidate={candidate} />}
+          {candidate?.status === "applied" && <ScoreBreakdown data={data} />}
           {hasScreening && <RequirementMatch screening={data.screening} />}
           <ProfileView profile={data.profile} />
         </div>

@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.logging_config import setup_logging
 from app.services.blogger import BloggerError, build_post_html, publish_post
 from app.services.job_forms import FormError, create_job_form as create_form
-from app.services.job_forms import download_file, list_responses
+from app.services.job_forms import download_file, list_responses, trash_file
 from app.services.job_forms import set_form_open as set_open
 from app.services.telegram import PostingError, announce_job
 
@@ -98,6 +98,19 @@ def download_cv(file_id: str) -> str:
     path.write_bytes(content)
     logger.info("Downloaded CV %s (%s bytes) to %s", filename, len(content), path)
     return json.dumps({"filename": filename, "path": str(path), "size": len(content)})
+
+
+@mcp.tool()
+def trash_drive_file(file_id: str) -> str:
+    """Move an applicant's CV in Google Drive to the trash. Returns 'trashed' or 'not_found'."""
+    try:
+        found = trash_file(file_id)
+    except FormError as exc:
+        logger.error("Trashing Drive file %s failed: %s", file_id, exc)
+        raise
+    state = "trashed" if found else "not_found"
+    logger.info("Drive file %s %s", file_id, state)
+    return state
 
 
 if __name__ == "__main__":

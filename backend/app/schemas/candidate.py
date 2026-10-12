@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class CandidateOut(BaseModel):
@@ -16,7 +16,11 @@ class CandidateOut(BaseModel):
     source: str
     status: str
     rejection_reason: str | None
-    match_score: float | None = None
+    override: str | None = None
+    override_reason: str | None = None
+    overall_score: float | None = None
+    scoring_status: str = "pending"
+    scoring_error: str | None = None
     rank: int | None = None
     extraction_status: str
     extraction_error: str | None
@@ -39,6 +43,18 @@ class CandidateOut(BaseModel):
             if match.get("rating") in counts:
                 counts[match["rating"]] += 1
         return counts
+
+
+class OverrideRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Reason is required")
+        return value
 
 
 class ImportResult(BaseModel):
@@ -69,24 +85,6 @@ class NewApplications(BaseModel):
     count: int
 
 
-class ExtractionSummary(BaseModel):
-    processed: int
-    extracted: int
-    failed: int
-
-
-class ParseSummary(BaseModel):
-    processed: int
-    parsed: int
-    failed: int
-
-
-class ScreeningSummary(BaseModel):
-    processed: int
-    screened: int
-    failed: int
-
-
 class CandidateText(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -97,6 +95,10 @@ class CandidateText(BaseModel):
     parse_status: str
     profile: dict | None
     screening: list[dict] | None
+    scores: dict | None = None
+    overall_score: float | None = None
+    scoring_status: str = "pending"
+    scoring_error: str | None = None
 
 
 class ScreeningRunOut(BaseModel):

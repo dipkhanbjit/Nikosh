@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.base import TimestampMixin
 
+from pgvector.sqlalchemy import Vector
+
+from app.core.config import settings
+
 if TYPE_CHECKING:
     from app.models.job import Job
 
@@ -38,5 +42,14 @@ class Candidate(TimestampMixin, Base):
     screening_status: Mapped[str] = mapped_column(String(20), default="pending")
     screening_error: Mapped[str | None] = mapped_column(String(500))
     match_score: Mapped[float | None] = mapped_column(Float)
+    scores: Mapped[dict | None] = mapped_column(JSONB)
+    overall_score: Mapped[float | None] = mapped_column(Float)
+    scoring_status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
+    scoring_error: Mapped[str | None] = mapped_column(String(500))
+    score_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    cv_embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dim))
+    override: Mapped[str | None] = mapped_column(String(20))  # "included" / "excluded" by the interviewer
+    override_reason: Mapped[str | None] = mapped_column(String(255))
+    override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     job: Mapped["Job"] = relationship(back_populates="candidates")

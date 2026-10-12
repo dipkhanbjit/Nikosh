@@ -1,4 +1,6 @@
+import logging
 import mimetypes
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
@@ -7,22 +9,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.exceptions import AppException
-from app.models import Candidate, Job
+from app.models import Candidate, DeletedApplication, Job
 from app.schemas.candidate import (
     CandidateOut,
     CandidateText,
     ImportSummary,
     NewApplications,
+    OverrideRequest,
     ScreeningRunOut,
 )
+from app.services.candidate_scoring import score_candidate
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
-from app.services.mcp_client import MCPToolError
+from app.services.mcp_client import MCPToolError, call_tool
 from app.services.ranking import ranked_candidates
 from app.services.screening_runs import execute_run, latest_run, start_screening
 from app.services.storage import delete_file
+
+logger = logging.getLogger(__name__)
 
 MAX_FILES_PER_UPLOAD = 20
 INTAKE_STATUSES = ("approved", "posted")
@@ -49,9 +55,19 @@ def _get_candidate(db: Session, candidate_id: int) -> Candidate:
     return candidate
 
 
+def _score_in_background(candidate_id: int) -> None:
+    """Score a manually included candidate (own DB session, runs after the response)."""
+    with SessionLocal() as db:
+        candidate = db.get(Candidate, candidate_id)
+        if candidate is None or candidate.status != "applied":
+            return
+        job = db.get(Job, candidate.job_id)
+        score_candidate(db, job, candidate)
+
+
 @job_router.get("/candidates", response_model=list[CandidateOut])
 def list_candidates(job_id: int, db: Session = Depends(get_db)):
-    """Ranked (eligible + screened) candidates first, then everyone else, newest first."""
+    """Ranked (eligible + scored) candidates first, then everyone else, newest first."""
     job = _get_job(db, job_id)
     ranked = ranked_candidates(db, job)
     for position, candidate in enumerate(ranked, start=1):
@@ -109,6 +125,44 @@ def sync_job_applications(job_id: int, db: Session = Depends(get_db)):
     return ImportSummary.from_results(results)
 
 
+@router.post("/{candidate_id}/include", response_model=CandidateOut)
+def include_candidate(
+    candidate_id: int,
+    body: OverrideRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Move an excluded candidate to Eligible (reason required), then score them in the background."""
+    candidate = _get_candidate(db, candidate_id)
+    if candidate.status != "excluded":
+        raise AppException("Only excluded candidates can be included", 409, "INVALID_STATUS")
+    candidate.status = "applied"
+    candidate.rejection_reason = None
+    candidate.override = "included"
+    candidate.override_reason = body.reason
+    candidate.override_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(candidate)
+    background_tasks.add_task(_score_in_background, candidate.id)
+    return candidate
+
+
+@router.post("/{candidate_id}/exclude", response_model=CandidateOut)
+def exclude_candidate(candidate_id: int, body: OverrideRequest, db: Session = Depends(get_db)):
+    """Move an eligible candidate to Excluded (reason required). Stored scores are kept."""
+    candidate = _get_candidate(db, candidate_id)
+    if candidate.status != "applied":
+        raise AppException("Only eligible candidates can be excluded", 409, "INVALID_STATUS")
+    candidate.status = "excluded"
+    candidate.rejection_reason = f"Manually excluded: {body.reason}"
+    candidate.override = "excluded"
+    candidate.override_reason = body.reason
+    candidate.override_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(candidate)
+    return candidate
+
+
 @router.get("/{candidate_id}/text", response_model=CandidateText)
 def get_cv_text(candidate_id: int, db: Session = Depends(get_db)):
     return _get_candidate(db, candidate_id)
@@ -129,9 +183,21 @@ def view_cv(candidate_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{candidate_id}", status_code=204)
-def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
+def delete_candidate(candidate_id: int, drive: bool = False, db: Session = Depends(get_db)):
+    """Delete a candidate. With drive=true (form applications only), also move the CV to the
+    Google Drive trash and remember the application so sync never imports it again."""
     candidate = _get_candidate(db, candidate_id)
+    if drive:
+        if candidate.source != "form" or not candidate.source_file_id:
+            raise AppException("Only Google Form applications have a CV in Drive", 400, "NOT_FROM_FORM")
+        try:
+            call_tool("trash_drive_file", file_id=candidate.source_file_id)
+        except MCPToolError:
+            raise AppException("Could not delete the CV from Google Drive", 503, "DRIVE_UNAVAILABLE") from None
+        db.add(DeletedApplication(job_id=candidate.job_id, source_file_id=candidate.source_file_id))
+
     cv_path = candidate.cv_file_path
     db.delete(candidate)
     db.commit()
     delete_file(cv_path)
+    logger.info("Candidate %s deleted%s", candidate_id, " (CV also removed from Drive)" if drive else "")

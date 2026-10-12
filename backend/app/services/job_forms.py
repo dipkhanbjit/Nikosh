@@ -129,3 +129,16 @@ def download_file(file_id: str) -> tuple[str, bytes]:
     except HttpError as exc:
         raise _google_error("download the CV", exc) from None
     return name, buffer.getvalue()
+
+
+def trash_file(file_id: str) -> bool:
+    """Move an uploaded CV in Drive to the trash. Returns False if the file no longer exists."""
+    try:
+        user_drive_service().files().update(fileId=file_id, body={"trashed": True}).execute()
+    except HttpError as exc:
+        if exc.status_code == 404:
+            logger.info("Google Drive: file %s not found (already deleted)", file_id)
+            return False
+        raise _google_error("delete the CV from Drive", exc) from None
+    logger.info("Google Drive: moved file %s to trash", file_id)
+    return True

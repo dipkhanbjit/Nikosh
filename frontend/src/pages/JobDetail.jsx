@@ -1,56 +1,36 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { employmentLabel, formatDeadline, getJob, STATUS_COLORS } from "../api/jobs";
 import CandidatesCard from "../components/CandidatesCard";
 import JobFormModal from "../components/JobFormModal";
 import MarkdownView from "../components/MarkdownView";
 import PostingCard from "../components/PostingCard";
+import ScoringWeightsCard from "../components/ScoringWeightsCard";
 import { Alert, Badge, Button, Card, PageHeader, Spinner } from "../components/ui";
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function RequirementList({ title, items }) {
-  if (items.length === 0) return null;
+function RequirementList({ items }) {
   return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
-      <ul className="divide-y divide-gray-100">
-        {items.map((r, i) => (
-          <li key={i} className="flex items-start justify-between gap-3 py-2">
-            <div>
-              <p className="text-sm text-gray-800">{r.text}</p>
-              <p className="text-xs text-gray-500">{capitalize(r.category)}</p>
-            </div>
-            <span className="shrink-0 text-xs font-medium text-gray-500">Weight {r.weight}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ol className="flex flex-col gap-2.5">
+      {items.map((r, i) => (
+        <li key={i} className="flex gap-3 text-sm text-gray-800">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-700">
+            {i + 1}
+          </span>
+          <span className="min-w-0 break-words">{r.text}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-function DetailRow({ label, value }) {
+function DetailRow({ label, children }) {
   return (
-    <div className="flex justify-between py-2 text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium text-gray-800">{value || "—"}</span>
-    </div>
-  );
-}
-
-function DeadlineRow({ job }) {
-  return (
-    <div className="flex justify-between py-2 text-sm">
-      <span className="text-gray-500">Application Deadline</span>
-      {job.application_deadline ? (
-        <span className="flex items-center gap-2 font-medium text-gray-800">
-          {formatDeadline(job.application_deadline)}
-          {job.applications_closed && <Badge color="red">Closed</Badge>}
-        </span>
-      ) : (
-        <span className="font-medium text-gray-800">Set on posting</span>
-      )}
+    <div className="flex items-center justify-between gap-4 py-2.5 text-sm">
+      <span className="shrink-0 text-gray-500">{label}</span>
+      <span className="min-w-0 text-right font-medium text-gray-800">{children || "—"}</span>
     </div>
   );
 }
@@ -61,6 +41,7 @@ export default function JobDetail() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState("");
   const [editOpen, setEditOpen] = useState(false);
+  const [scoresVersion, setScoresVersion] = useState(0);
 
   useEffect(() => {
     getJob(id).then(setJob).catch((err) => setError(err.message));
@@ -75,15 +56,14 @@ export default function JobDetail() {
     );
   }
 
-  const mandatory = job.requirements.filter((r) => r.mandatory);
-  const preferred = job.requirements.filter((r) => !r.mandatory);
   const canEditJD = job.status === "draft" || job.status === "approved";
 
   return (
-    <div>
-      <Link to="/jobs" className="mb-3 inline-block text-sm text-gray-500 hover:text-gray-700">
+    <div className="min-w-0">
+      <Button className="mb-4" onClick={() => navigate("/jobs")}>
         ← Back to Jobs
-      </Link>
+      </Button>
+
       <PageHeader
         title={job.title}
         subtitle={[job.department, job.location].filter(Boolean).join(" · ")}
@@ -101,10 +81,12 @@ export default function JobDetail() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-3">
         <Card title="Job Description" className="lg:col-span-2">
           {job.description ? (
-            <MarkdownView content={job.description} />
+            <div className="min-w-0 break-words">
+              <MarkdownView content={job.description} />
+            </div>
           ) : (
             <div className="py-10 text-center">
               <p className="text-sm text-gray-500">No job description yet.</p>
@@ -115,23 +97,30 @@ export default function JobDetail() {
           )}
         </Card>
 
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           <PostingCard job={job} onUpdated={setJob} />
 
           <Card title="Profile">
             <div className="divide-y divide-gray-100">
-              <div className="flex justify-between py-2 text-sm">
-                <span className="text-gray-500">Status</span>
+              <DetailRow label="Status">
                 <Badge color={STATUS_COLORS[job.status]}>{capitalize(job.status)}</Badge>
-              </div>
-              <DetailRow label="Department" value={job.department} />
-              <DetailRow label="Location" value={job.location} />
-              <DetailRow label="Employment Type" value={employmentLabel(job.employment_type)} />
-              <DetailRow
-                label="Minimum Experience"
-                value={job.min_experience_years != null ? `${job.min_experience_years} years` : null}
-              />
-              <DeadlineRow job={job} />
+              </DetailRow>
+              <DetailRow label="Department">{job.department}</DetailRow>
+              <DetailRow label="Location">{job.location}</DetailRow>
+              <DetailRow label="Employment Type">{employmentLabel(job.employment_type)}</DetailRow>
+              <DetailRow label="Minimum Experience">
+                {job.min_experience_years != null ? `${job.min_experience_years} years` : null}
+              </DetailRow>
+              <DetailRow label="Application Deadline">
+                {job.application_deadline ? (
+                  <span className="inline-flex flex-wrap items-center justify-end gap-2">
+                    {formatDeadline(job.application_deadline)}
+                    {job.applications_closed && <Badge color="red">Closed</Badge>}
+                  </span>
+                ) : (
+                  "Set on posting"
+                )}
+              </DetailRow>
             </div>
           </Card>
 
@@ -139,17 +128,21 @@ export default function JobDetail() {
             {job.requirements.length === 0 ? (
               <p className="text-sm text-gray-500">Extracted when the JD is approved.</p>
             ) : (
-              <div className="flex flex-col gap-4">
-                <RequirementList title="Mandatory" items={mandatory} />
-                <RequirementList title="Preferred" items={preferred} />
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-gray-500">All requirements are mandatory (gate for eligibility).</p>
+                <RequirementList items={job.requirements} />
               </div>
             )}
           </Card>
+
+          {job.requirements.length > 0 && (
+            <ScoringWeightsCard job={job} onSaved={() => setScoresVersion((v) => v + 1)} />
+          )}
         </div>
       </div>
 
-      <div className="mt-6">
-        <CandidatesCard job={job} />
+      <div className="mt-6 min-w-0">
+        <CandidatesCard key={scoresVersion} job={job} />
       </div>
 
       <JobFormModal
