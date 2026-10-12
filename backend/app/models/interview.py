@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -30,5 +31,9 @@ class Interview(TimestampMixin, Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancel_reason: Mapped[str | None] = mapped_column(String(255))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # Secret for the candidate's interview link (no login needed)
+    join_token: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, default=lambda: secrets.token_urlsafe(32)
+    )
 
     candidate: Mapped["Candidate"] = relationship(back_populates="interviews")

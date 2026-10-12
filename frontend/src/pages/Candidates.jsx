@@ -15,6 +15,7 @@ import {
 } from "../api/interviews";
 import { getScoreWeights, listJobs } from "../api/jobs";
 import CandidateProfileModal from "../components/CandidateProfileModal";
+import { copyText } from "../utils/clipboard";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Spinner, Table, Textarea } from "../components/ui";
 
 const DEFAULT_TOP_N = 5;
@@ -22,6 +23,31 @@ const MAX_TOP_N = 50; // backend limit
 const DEFAULT_DURATION = 30;
 const MIN_DURATION = 15;
 const MAX_DURATION = 120;
+
+// One read-only value with a Copy button (used for the one-time candidate credentials)
+function CopyField({ label, value }) {
+  const [state, setState] = useState(""); // "", "copied" or "failed"
+
+  const handleCopy = async () => setState((await copyText(value)) ? "copied" : "failed");
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm font-medium text-gray-700">{label}</span>
+      <div className="flex gap-2">
+        <input
+          readOnly
+          value={value}
+          onFocus={(e) => e.target.select()}
+          className="min-w-0 flex-1 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-800"
+        />
+        <Button variant="secondary" className="px-3 py-1" onClick={handleCopy}>
+          {state === "copied" ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      {state === "failed" && <p className="text-xs text-red-600">Could not copy. Select the text and copy it manually.</p>}
+    </div>
+  );
+}
 
 const todayInDhaka = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
 
@@ -48,6 +74,7 @@ export default function Candidates() {
   const [interviews, setInterviews] = useState([]);
   const [scheduling, setScheduling] = useState(null); // { item, date, time, duration, notes }
   const [savingInterview, setSavingInterview] = useState(false);
+  const [credentials, setCredentials] = useState(null); // { name, email, password, joinUrl }, shown once
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -160,6 +187,12 @@ export default function Candidates() {
         notes: notes.trim() || null,
       });
       setScheduling(null);
+      setCredentials({
+        name: interview.candidate_name || "the candidate",
+        email: interview.credentials.email,
+        password: interview.credentials.password,
+        joinUrl: interview.join_url,
+      });
       setInterviews(await listJobInterviews(jobId));
       setNotice(
         `Interview scheduled for ${interview.candidate_name || "the candidate"} on ${formatDateTime(interview.scheduled_at)}.`
@@ -480,6 +513,27 @@ export default function Candidates() {
               onChange={(e) => setScheduling({ ...scheduling, notes: e.target.value })}
               placeholder="Optional notes for this interview"
             />
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(credentials)}
+        title="Candidate Login Details"
+        onClose={() => setCredentials(null)}
+        closeOnBackdrop={false}
+        footer={<Button onClick={() => setCredentials(null)}>Done</Button>}
+      >
+        {credentials && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-gray-700">
+              Send these details to <span className="font-semibold">{credentials.name}</span>. They log in with
+              this email and password, then open the interview link.
+            </p>
+            <CopyField label="Email" value={credentials.email} />
+            <CopyField label="Password" value={credentials.password} />
+            <CopyField label="Interview link" value={credentials.joinUrl} />
+            <Alert type="info">Shown only once. It will be emailed automatically in 6.2.2.</Alert>
           </div>
         )}
       </Modal>

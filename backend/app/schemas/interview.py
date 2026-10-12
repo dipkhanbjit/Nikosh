@@ -20,6 +20,11 @@ class CancelRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=255)
 
 
+class Credentials(BaseModel):
+    email: str
+    password: str
+
+
 class InterviewOut(BaseModel):
     id: int
     job_id: int
@@ -34,4 +39,6 @@ class InterviewOut(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     cancel_reason: str | None
+    join_url: str
     created_at: datetime
+    credentials: Credentials | None = None  # only in the schedule response, shown once

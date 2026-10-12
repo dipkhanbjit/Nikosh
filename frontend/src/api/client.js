@@ -1,4 +1,4 @@
-import { clearUser, getUser } from "../utils/auth";
+import { clearUser, getUser, loginPathWithNext } from "../utils/auth";
 
 export async function apiRequest(path, { method = "GET", body } = {}) {
   const isForm = body instanceof FormData;
@@ -11,10 +11,14 @@ export async function apiRequest(path, { method = "GET", body } = {}) {
 
   if (response.status === 401 && getUser()) {
     clearUser();
-    window.location.href = "/login";
+    // come back to the same page after logging in again
+    window.location.href = loginPathWithNext(window.location.pathname + window.location.search);
   }
   if (!response.ok) {
-    throw new Error(data?.error?.message || "Request failed");
+    const error = new Error(data?.error?.message || "Request failed");
+    error.status = response.status;
+    error.code = data?.error?.code;
+    throw error;
   }
   return data;
 }

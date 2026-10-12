@@ -9,8 +9,20 @@ from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Interview, Job, User
-from app.schemas.interview import CancelRequest, InterviewCreate, InterviewOut, InterviewUpdate
-from app.services.interviews import change_status, ensure_future, validate_candidate
+from app.schemas.interview import (
+    CancelRequest,
+    Credentials,
+    InterviewCreate,
+    InterviewOut,
+    InterviewUpdate,
+)
+from app.services.interviews import (
+    change_status,
+    ensure_candidate_account,
+    ensure_future,
+    join_url,
+    validate_candidate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +62,7 @@ def _to_out(db: Session, interview: Interview) -> InterviewOut:
         started_at=interview.started_at,
         ended_at=interview.ended_at,
         cancel_reason=interview.cancel_reason,
+        join_url=join_url(interview),
         created_at=interview.created_at,
     )
 
@@ -64,6 +77,7 @@ def schedule_interview(
     job = _get_job(db, job_id)
     ensure_future(payload.scheduled_at)
     candidate = validate_candidate(db, job, payload.candidate_id)
+    email, password = ensure_candidate_account(db, candidate)
     interview = Interview(
         job_id=job.id,
         candidate_id=candidate.id,
@@ -76,7 +90,9 @@ def schedule_interview(
     db.commit()
     db.refresh(interview)
     logger.info("Interview %s scheduled for candidate %s at %s", interview.id, candidate.id, interview.scheduled_at)
-    return _to_out(db, interview)
+    out = _to_out(db, interview)
+    out.credentials = Credentials(email=email, password=password)
+    return out
 
 
 @job_router.get("", response_model=list[InterviewOut])

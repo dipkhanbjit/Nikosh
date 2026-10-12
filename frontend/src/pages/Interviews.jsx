@@ -8,6 +8,7 @@ import {
   markNoShow,
 } from "../api/interviews";
 import { Alert, Badge, Button, Card, Modal, PageHeader, Table, Textarea } from "../components/ui";
+import { copyText } from "../utils/clipboard";
 
 const MIN_REASON_LENGTH = 3;
 
@@ -18,6 +19,7 @@ export default function Interviews() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [manualLink, setManualLink] = useState(null); // { name, url } when automatic copy failed
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
@@ -33,6 +35,18 @@ export default function Interviews() {
 
   const cancelling = action?.type === "cancel";
   const name = action?.interview.candidate_name || "this candidate";
+
+  const handleCopy = async (iv) => {
+    setError("");
+    setManualLink(null);
+    const name = iv.candidate_name || "the candidate";
+    if (await copyText(iv.join_url)) {
+      setNotice(`Interview link for ${name} copied.`);
+    } else {
+      setNotice("");
+      setManualLink({ name, url: iv.join_url });
+    }
+  };
 
   const handleAction = async () => {
     setSaving(true);
@@ -97,6 +111,9 @@ export default function Interviews() {
       render: (iv) =>
         iv.status === "scheduled" && (
           <div className="flex justify-end gap-2">
+            <Button variant="secondary" className="px-3 py-1" onClick={() => handleCopy(iv)}>
+              Copy link
+            </Button>
             {new Date(iv.scheduled_at) <= new Date() && (
               <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "no_show")}>
                 No-show
@@ -116,6 +133,23 @@ export default function Interviews() {
 
       {error && <Alert type="error">{error}</Alert>}
       {notice && <Alert type="success">{notice}</Alert>}
+      {manualLink && (
+        <Alert type="info">
+          <div className="flex items-start justify-between gap-3">
+            <p>Could not copy automatically. Copy the interview link for {manualLink.name}:</p>
+            <button type="button" onClick={() => setManualLink(null)} className="text-xs opacity-70 hover:opacity-100">
+              Dismiss
+            </button>
+          </div>
+          <input
+            readOnly
+            value={manualLink.url}
+            onFocus={(e) => e.target.select()}
+            autoFocus
+            className="mt-2 w-full rounded-md border border-blue-200 bg-white px-3 py-2 font-mono text-xs text-gray-800"
+          />
+        </Alert>
+      )}
 
       <Card
         title={`Sessions (${interviews.length})`}
