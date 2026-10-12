@@ -10,7 +10,8 @@ class JDDraft(BaseModel):
 
     description: str = Field(description="Full job description in Markdown")
     requirements: list[Requirement] = Field(
-        description="Requirements extracted from the job description"
+        description="Only the essential must-have requirements from the Requirements section (4 to 8 items). "
+                    "Do not include Nice to Have items."
     )
 
 

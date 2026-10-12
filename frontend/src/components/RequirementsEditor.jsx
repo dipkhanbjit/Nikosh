@@ -1,73 +1,85 @@
-const CATEGORY_LABELS = { skill: "Skill", experience: "Experience", qualification: "Qualification" };
+import { useState } from "react";
 
 export default function RequirementsEditor({ requirements, onChange, editable }) {
-  const update = (index, changes) =>
-    onChange(requirements.map((r, i) => (i === index ? { ...r, ...changes } : r)));
+  const [newText, setNewText] = useState("");
+
+  // Editing the text clears the category so the backend re-detects it.
+  const updateText = (index, text) =>
+    onChange(requirements.map((r, i) => (i === index ? { text, category: null } : r)));
+
+  const removeIfEmpty = (index) => {
+    if (!requirements[index].text.trim()) remove(index);
+  };
 
   const remove = (index) => onChange(requirements.filter((_, i) => i !== index));
 
-  if (requirements.length === 0) {
-    return <p className="text-sm text-gray-500">No requirements extracted yet.</p>;
-  }
+  const add = () => {
+    const text = newText.trim();
+    if (!text) return;
+    onChange([...requirements, { text, category: null }]);
+    setNewText("");
+  };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
-            <th className="py-2 pr-3 font-medium">Requirement</th>
-            <th className="py-2 pr-3 font-medium">Category</th>
-            <th className="py-2 pr-3 text-center font-medium">Mandatory</th>
-            <th className="py-2 pr-3 text-center font-medium">Weight</th>
-            {editable && <th className="py-2" />}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-gray-500">
+        Every requirement is mandatory. Candidates must meet (or partially meet) all of them to be eligible.
+      </p>
+
+      {requirements.length === 0 ? (
+        <p className="text-sm text-gray-500">No requirements yet.</p>
+      ) : (
+        <ol className="flex flex-col gap-2">
           {requirements.map((r, i) => (
-            <tr key={i}>
-              <td className="py-2 pr-3 text-gray-800">{r.text}</td>
-              <td className="py-2 pr-3 text-gray-500">{CATEGORY_LABELS[r.category]}</td>
-              <td className="py-2 pr-3 text-center">
-                <input
-                  type="checkbox"
-                  checked={r.mandatory}
-                  disabled={!editable}
-                  onChange={(e) => update(i, { mandatory: e.target.checked })}
-                  className="h-4 w-4 accent-indigo-600"
-                />
-              </td>
-              <td className="py-2 pr-3 text-center">
-                {editable ? (
-                  <select
-                    value={r.weight}
-                    onChange={(e) => update(i, { weight: Number(e.target.value) })}
-                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-sm"
-                  >
-                    {[1, 2, 3, 4, 5].map((w) => (
-                      <option key={w} value={w}>
-                        {w}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  r.weight
-                )}
-              </td>
-              {editable && (
-                <td className="py-2 text-right">
+            <li key={i} className="flex items-start gap-2 text-sm">
+              <span className="mt-2 w-5 shrink-0 text-right text-xs text-gray-400">{i + 1}.</span>
+              {editable ? (
+                <>
+                  <input
+                    value={r.text}
+                    onChange={(e) => updateText(i, e.target.value)}
+                    onBlur={() => removeIfEmpty(i)}
+                    className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
                   <button
                     type="button"
                     onClick={() => remove(i)}
-                    className="text-xs text-gray-400 hover:text-red-600"
+                    className="mt-1.5 text-xs text-gray-400 hover:text-red-600"
                   >
                     Remove
                   </button>
-                </td>
+                </>
+              ) : (
+                <p className="mt-1 flex-1 text-gray-800">{r.text}</p>
               )}
-            </tr>
+            </li>
           ))}
-        </tbody>
-      </table>
+        </ol>
+      )}
+
+      {editable && (
+        <div className="flex gap-2">
+          <input
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
+            placeholder="Add a requirement, e.g. At least 3 years of experience with React"
+            className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <button
+            type="button"
+            onClick={add}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Add
+          </button>
+        </div>
+      )}
     </div>
   );
 }

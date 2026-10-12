@@ -48,5 +48,8 @@ class Candidate(TimestampMixin, Base):
     scoring_error: Mapped[str | None] = mapped_column(String(500))
     score_fingerprint: Mapped[str | None] = mapped_column(String(64))
     cv_embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dim))
+    override: Mapped[str | None] = mapped_column(String(20))  # "included" / "excluded" by the interviewer
+    override_reason: Mapped[str | None] = mapped_column(String(255))
+    override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     job: Mapped["Job"] = relationship(back_populates="candidates")

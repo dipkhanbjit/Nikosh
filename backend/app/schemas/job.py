@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone
 from typing import Literal
 
@@ -5,13 +6,36 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 
 EmploymentType = Literal["full_time", "part_time", "contract", "internship"]
 JobStatus = Literal["draft", "approved", "posted", "closed"]
+RequirementCategory = Literal["skill", "experience", "qualification"]
+
+_YEARS = re.compile(r"\d+(?:\.\d+)?\s*\+?\s*(?:years?|yrs?)", re.IGNORECASE)
+_QUALIFICATION = re.compile(
+    r"\b(degree|bachelor'?s?|master'?s?|bsc|msc|b\.sc|m\.sc|phd|diploma|certifi\w*|graduate)\b",
+    re.IGNORECASE,
+)
+
+
+def infer_category(text: str) -> str:
+    """Category for a requirement typed by the interviewer (no AI call)."""
+    if _YEARS.search(text) and "experience" in text.lower():
+        return "experience"
+    if _QUALIFICATION.search(text):
+        return "qualification"
+    return "skill"
 
 
 class Requirement(BaseModel):
+    """A mandatory requirement. Every requirement is a gate; there are no weights."""
+
     text: str = Field(min_length=1, max_length=500)
-    category: Literal["skill", "experience", "qualification"]
-    mandatory: bool = False
-    weight: int = Field(default=3, ge=1, le=5)
+    category: RequirementCategory | None = None
+
+    @model_validator(mode="after")
+    def fill_category(self) -> "Requirement":
+        self.text = self.text.strip()
+        if self.category is None:
+            self.category = infer_category(self.text)
+        return self
 
 
 class JobCreate(BaseModel):

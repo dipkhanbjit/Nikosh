@@ -9,6 +9,7 @@ from langgraph.types import Command, interrupt
 from app.core.database import SessionLocal
 from app.models import Job
 from app.schemas.jd import JDDraft
+from app.schemas.job import Requirement
 from app.services.job_posting import publish_job
 from app.services.knowledge_base import search
 from app.services.llm import get_llm
@@ -16,8 +17,7 @@ from app.workflows.checkpointer import get_checkpointer
 
 SYSTEM_PROMPT = """You are an HR assistant writing job descriptions for the company.
 Write a professional job description in Markdown with these sections:
-About the Company, Role Overview, Key Responsibilities, Requirements
-(split into Mandatory and Preferred), and Benefits.
+About the Company, Role Overview, Key Responsibilities, Requirements, Nice to Have, and Benefits.
 
 Rules:
 - Use only company facts (profile, policies, benefits, tech stack) found in the
@@ -25,11 +25,13 @@ Rules:
 - The Benefits section must list the compensation, leave and other benefits
   found in the company context.
 - Follow the role standards in the context for the seniority level.
-- If the job profile has a minimum experience, include it as a mandatory
-  experience requirement.
-- Then extract every requirement from the JD. For each one set category
-  (skill, experience or qualification), mandatory=true only if it is listed
-  under Mandatory, and weight from 1 (minor) to 5 (critical)."""
+- The Requirements section lists only the essential must-haves (4 to 8 items).
+  Every candidate must meet all of them, so do not include optional skills there.
+- Put optional or bonus skills only in the Nice to Have section.
+- If the job profile has a minimum experience, include it as a requirement worded
+  like "At least N years of professional experience in ...".
+- Then extract ONLY the items of the Requirements section (not Nice to Have) as the
+  requirements list. For each one set category: skill, experience or qualification."""
 
 
 class JDGraphState(TypedDict, total=False):
@@ -83,7 +85,7 @@ def draft(state: JDGraphState) -> dict:
         "messages": [{
             "role": "assistant",
             "content": "Here is the draft based on company documents. "
-                       "Approve it or tell me what to change.",
+                       "Review the requirements (all are mandatory), then approve it or tell me what to change.",
         }],
     }
 
@@ -109,11 +111,20 @@ def review(state: JDGraphState) -> Command[Literal["draft", "save"]]:
     return Command(goto="save", update=update)
 
 
+def _clean_requirements(requirements: list[dict]) -> list[dict]:
+    """Keep non-empty requirements as {text, category}; fill missing categories automatically."""
+    return [
+        Requirement(text=r.get("text", ""), category=r.get("category")).model_dump()
+        for r in requirements
+        if (r.get("text") or "").strip()
+    ]
+
+
 def save(state: JDGraphState) -> dict:
     with SessionLocal() as db:
         job = db.get(Job, state["job_id"])
         job.description = state["description"]
-        job.requirements = state["requirements"]
+        job.requirements = _clean_requirements(state["requirements"])
         job.status = "approved"
         db.commit()
     return {"messages": [{"role": "assistant", "content": "JD approved and saved to the job."}]}
