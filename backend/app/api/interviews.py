@@ -9,8 +9,21 @@ from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Interview, Job, User
-from app.schemas.interview import CancelRequest, InterviewCreate, InterviewOut, InterviewUpdate
-from app.services.interviews import change_status, ensure_future, validate_candidate
+from app.schemas.interview import (
+    CancelRequest,
+    Credentials,
+    InterviewCreate,
+    InterviewOut,
+    InterviewUpdate,
+)
+from app.services.interviews import (
+    change_status,
+    ensure_candidate_account,
+    ensure_future,
+    join_url,
+    validate_candidate,
+)
+from app.services.invitations import cancel_invitation, send_invitation
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +63,11 @@ def _to_out(db: Session, interview: Interview) -> InterviewOut:
         started_at=interview.started_at,
         ended_at=interview.ended_at,
         cancel_reason=interview.cancel_reason,
+        join_url=join_url(interview),
+        calendar_url=interview.calendar_url,
+        invitation_status=interview.invitation_status,
+        invitation_error=interview.invitation_error,
+        invitation_sent_at=interview.invitation_sent_at,
         created_at=interview.created_at,
     )
 
@@ -63,7 +81,8 @@ def schedule_interview(
 ):
     job = _get_job(db, job_id)
     ensure_future(payload.scheduled_at)
-    candidate = validate_candidate(db, job, payload.candidate_id)
+    candidate = validate_candidate(db, job, payload.candidate_id, payload.contact_email)
+    email, password = ensure_candidate_account(db, candidate)
     interview = Interview(
         job_id=job.id,
         candidate_id=candidate.id,
@@ -76,7 +95,10 @@ def schedule_interview(
     db.commit()
     db.refresh(interview)
     logger.info("Interview %s scheduled for candidate %s at %s", interview.id, candidate.id, interview.scheduled_at)
-    return _to_out(db, interview)
+    send_invitation(db, interview, password)  # never undoes the schedule; result stored on the interview
+    out = _to_out(db, interview)
+    out.credentials = Credentials(email=email, password=password)
+    return out
 
 
 @job_router.get("", response_model=list[InterviewOut])
@@ -124,7 +146,25 @@ def reschedule_interview(interview_id: int, payload: InterviewUpdate, db: Sessio
 def cancel_interview(interview_id: int, body: CancelRequest, db: Session = Depends(get_db)):
     interview = _get_interview(db, interview_id)
     interview.cancel_reason = body.reason
-    return _to_out(db, change_status(db, interview, "cancelled"))
+    interview = change_status(db, interview, "cancelled")
+    cancel_invitation(db, interview)
+    return _to_out(db, interview)
+
+
+@router.post("/{interview_id}/resend-invitation", response_model=InterviewOut)
+def resend_invitation(interview_id: int, db: Session = Depends(get_db)):
+    """Retry the calendar event if it failed and email the invitation again with a NEW password
+    (the old one is not stored)."""
+    interview = _get_interview(db, interview_id)
+    if interview.status != "scheduled":
+        raise AppException("Only scheduled interviews can be re-invited", 409, "INVALID_STATUS")
+    email, password = ensure_candidate_account(db, interview.candidate)
+    db.commit()
+    logger.info("Interview %s: resending invitation", interview.id)
+    send_invitation(db, interview, password)
+    out = _to_out(db, interview)
+    out.credentials = Credentials(email=email, password=password)
+    return out
 
 
 @router.post("/{interview_id}/no-show", response_model=InterviewOut)

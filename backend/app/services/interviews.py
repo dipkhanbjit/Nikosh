@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import secrets
+import string
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -8,10 +10,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.exceptions import AppException
-from app.models import Candidate, Interview, Job
+from app.core.security import hash_password
+from app.models import Candidate, Interview, Job, User
 from app.models.interview import ACTIVE_STATUSES
 
 logger = logging.getLogger(__name__)
+
+PASSWORD_LENGTH = 10
+PASSWORD_CHARS = string.ascii_letters + string.digits
 
 # Allowed status changes: scheduled → in_progress → completed, or scheduled → cancelled / no_show
 TRANSITIONS = {
@@ -37,17 +43,24 @@ def change_status(db: Session, interview: Interview, new_status: str) -> Intervi
     return interview
 
 
+def join_url(interview: Interview) -> str:
+    return f"{settings.frontend_base_url.rstrip('/')}/interview/join/{interview.join_token}"
+
+
 def ensure_future(scheduled_at: datetime) -> None:
     if scheduled_at <= datetime.now(timezone.utc):
         raise AppException("Interview time must be in the future", 422, "TIME_IN_PAST")
 
 
-def validate_candidate(db: Session, job: Job, candidate_id: int) -> Candidate:
+def validate_candidate(db: Session, job: Job, candidate_id: int, contact_email: str | None = None) -> Candidate:
     candidate = db.get(Candidate, candidate_id)
     if not candidate or candidate.job_id != job.id:
         raise AppException("Candidate not found for this job", 404, "CANDIDATE_NOT_FOUND")
     if not candidate.shortlisted:
         raise AppException("Only shortlisted candidates can be scheduled", 409, "NOT_SHORTLISTED")
+    if contact_email:
+        # Login and invitation go to this address (saved together with the interview)
+        candidate.email = contact_email.strip().lower()
     if not candidate.email:
         raise AppException("Candidate has no email address", 409, "NO_EMAIL")
     active = db.scalar(
@@ -58,6 +71,33 @@ def validate_candidate(db: Session, job: Job, candidate_id: int) -> Candidate:
     if active:
         raise AppException("Candidate already has an active interview", 409, "INTERVIEW_EXISTS")
     return candidate
+
+
+def ensure_candidate_account(db: Session, candidate: Candidate) -> tuple[str, str]:
+    """Find or create the candidate's login account, set a new password and link it.
+    Returns (email, plain password) so it can be shown once; the password is never stored or logged."""
+    email = candidate.email.strip().lower()
+    user = db.scalar(select(User).where(User.email == email))
+    if user and user.role != "candidate":
+        raise AppException("This email belongs to a staff account", 409, "EMAIL_IN_USE")
+
+    password = "".join(secrets.choice(PASSWORD_CHARS) for _ in range(PASSWORD_LENGTH))
+    if user:
+        user.hashed_password = hash_password(password)
+        user.is_active = True
+        logger.info("Candidate account %s: password reset for new interview", user.id)
+    else:
+        user = User(
+            email=email,
+            hashed_password=hash_password(password),
+            full_name=candidate.full_name or email,
+            role="candidate",
+        )
+        db.add(user)
+        db.flush()
+        logger.info("Candidate account %s created for candidate %s", user.id, candidate.id)
+    candidate.user_id = user.id
+    return email, password
 
 
 def mark_no_shows() -> None:

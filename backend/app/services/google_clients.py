@@ -6,12 +6,15 @@ from googleapiclient.discovery import build
 
 from app.core.config import settings
 
-# User OAuth token: Blogger posting, per-job Google Forms, and CV downloads
+# User OAuth token: Blogger posting, per-job Google Forms, CV downloads,
+# interview invitation emails and calendar events
 OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/blogger",
     "https://www.googleapis.com/auth/forms.body",
     "https://www.googleapis.com/auth/forms.responses.readonly",
     "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 
 
@@ -34,3 +37,11 @@ def forms_service():
 
 def user_drive_service():
     return build("drive", "v3", credentials=_oauth_credentials(), cache_discovery=False)
+
+
+def gmail_service():
+    return build("gmail", "v1", credentials=_oauth_credentials(), cache_discovery=False)
+
+
+def calendar_service():
+    return build("calendar", "v3", credentials=_oauth_credentials(), cache_discovery=False)

@@ -1,10 +1,10 @@
-export default function Modal({ open, title, onClose, footer, children }) {
+export default function Modal({ open, title, onClose, footer, closeOnBackdrop = true, children }) {
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      onClick={closeOnBackdrop ? onClose : undefined}
     >
       <div
         className="w-full max-w-lg rounded-lg bg-white shadow-lg"

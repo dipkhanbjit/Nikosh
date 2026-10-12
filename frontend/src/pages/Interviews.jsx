@@ -3,21 +3,33 @@ import { useCallback, useEffect, useState } from "react";
 import {
   INTERVIEW_STATUS,
   cancelInterview,
+  credentialsFrom,
   formatDateTime,
   listInterviews,
   markNoShow,
+  resendInvitation,
 } from "../api/interviews";
+import CredentialsModal from "../components/CredentialsModal";
 import { Alert, Badge, Button, Card, Modal, PageHeader, Table, Textarea } from "../components/ui";
+import { copyText } from "../utils/clipboard";
 
 const MIN_REASON_LENGTH = 3;
+
+const ACTION_TEXT = {
+  cancel: { title: "Cancel Interview", button: "Cancel interview" },
+  no_show: { title: "Mark as No-show", button: "Mark no-show" },
+  resend: { title: "Resend Invitation", button: "Resend invitation" },
+};
 
 export default function Interviews() {
   const [interviews, setInterviews] = useState([]);
   const [status, setStatus] = useState("");
-  const [action, setAction] = useState(null); // { interview, type: "cancel" | "no_show" }
+  const [action, setAction] = useState(null); // { interview, type: "cancel" | "no_show" | "resend" }
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [manualLink, setManualLink] = useState(null); // { name, url } when automatic copy failed
+  const [credentials, setCredentials] = useState(null); // new login details after a resend, shown once
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
@@ -34,6 +46,18 @@ export default function Interviews() {
   const cancelling = action?.type === "cancel";
   const name = action?.interview.candidate_name || "this candidate";
 
+  const handleCopy = async (iv) => {
+    setError("");
+    setManualLink(null);
+    const name = iv.candidate_name || "the candidate";
+    if (await copyText(iv.join_url)) {
+      setNotice(`Interview link for ${name} copied.`);
+    } else {
+      setNotice("");
+      setManualLink({ name, url: iv.join_url });
+    }
+  };
+
   const handleAction = async () => {
     setSaving(true);
     setError("");
@@ -42,6 +66,10 @@ export default function Interviews() {
       if (cancelling) {
         await cancelInterview(action.interview.id, reason.trim());
         setNotice(`Interview with ${name} was cancelled.`);
+      } else if (action.type === "resend") {
+        const interview = await resendInvitation(action.interview.id);
+        setCredentials(credentialsFrom(interview));
+        if (interview.invitation_status === "sent") setNotice(`Invitation sent again to ${name}.`);
       } else {
         await markNoShow(action.interview.id);
         setNotice(`${name} was marked as no-show.`);
@@ -87,6 +115,25 @@ export default function Interviews() {
       },
     },
     {
+      key: "invitation",
+      label: "Invitation",
+      render: (iv) => {
+        if (iv.invitation_status === "sent")
+          return (
+            <span title={iv.invitation_sent_at ? `Sent ${formatDateTime(iv.invitation_sent_at)}` : ""}>
+              <Badge color="green">Sent</Badge>
+            </span>
+          );
+        if (iv.invitation_status === "failed")
+          return (
+            <span title={iv.invitation_error || ""} className="cursor-help">
+              <Badge color="red">Failed</Badge>
+            </span>
+          );
+        return "—";
+      },
+    },
+    {
       key: "notes",
       label: "Notes",
       render: (iv) => <p className="max-w-[16rem] text-sm text-gray-600">{iv.notes || "—"}</p>,
@@ -97,11 +144,17 @@ export default function Interviews() {
       render: (iv) =>
         iv.status === "scheduled" && (
           <div className="flex justify-end gap-2">
+            <Button variant="secondary" className="px-3 py-1" onClick={() => handleCopy(iv)}>
+              Copy link
+            </Button>
             {new Date(iv.scheduled_at) <= new Date() && (
               <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "no_show")}>
                 No-show
               </Button>
             )}
+            <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "resend")}>
+              Resend
+            </Button>
             <Button variant="secondary" className="px-3 py-1 text-red-600" onClick={() => openAction(iv, "cancel")}>
               Cancel
             </Button>
@@ -116,6 +169,23 @@ export default function Interviews() {
 
       {error && <Alert type="error">{error}</Alert>}
       {notice && <Alert type="success">{notice}</Alert>}
+      {manualLink && (
+        <Alert type="info">
+          <div className="flex items-start justify-between gap-3">
+            <p>Could not copy automatically. Copy the interview link for {manualLink.name}:</p>
+            <button type="button" onClick={() => setManualLink(null)} className="text-xs opacity-70 hover:opacity-100">
+              Dismiss
+            </button>
+          </div>
+          <input
+            readOnly
+            value={manualLink.url}
+            onFocus={(e) => e.target.select()}
+            autoFocus
+            className="mt-2 w-full rounded-md border border-blue-200 bg-white px-3 py-2 font-mono text-xs text-gray-800"
+          />
+        </Alert>
+      )}
 
       <Card
         title={`Sessions (${interviews.length})`}
@@ -140,7 +210,7 @@ export default function Interviews() {
 
       <Modal
         open={Boolean(action)}
-        title={cancelling ? "Cancel Interview" : "Mark as No-show"}
+        title={action && ACTION_TEXT[action.type].title}
         onClose={() => setAction(null)}
         footer={
           <>
@@ -148,25 +218,32 @@ export default function Interviews() {
               Back
             </Button>
             <Button
-              variant="danger"
+              variant={action?.type === "resend" ? "primary" : "danger"}
               onClick={handleAction}
               loading={saving}
               disabled={cancelling && reason.trim().length < MIN_REASON_LENGTH}
             >
-              {cancelling ? "Cancel interview" : "Mark no-show"}
+              {action && ACTION_TEXT[action.type].button}
             </Button>
           </>
         }
       >
         {action && (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-gray-700">
-              {cancelling ? "Cancel the interview with " : "Mark "}
-              <span className="font-semibold">{name}</span>
-              {cancelling
-                ? ` on ${formatDateTime(action.interview.scheduled_at)}?`
-                : " as no-show? This cannot be undone."}
-            </p>
+            {action.type === "resend" ? (
+              <p className="text-sm text-gray-700">
+                Send the invitation to <span className="font-semibold">{name}</span> ({action.interview.candidate_email})
+                again? A new password is created and the old one stops working.
+              </p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                {cancelling ? "Cancel the interview with " : "Mark "}
+                <span className="font-semibold">{name}</span>
+                {cancelling
+                  ? ` on ${formatDateTime(action.interview.scheduled_at)}? The candidate is notified by email.`
+                  : " as no-show? This cannot be undone."}
+              </p>
+            )}
             {cancelling && (
               <Textarea
                 label="Reason *"
@@ -181,6 +258,8 @@ export default function Interviews() {
           </div>
         )}
       </Modal>
+
+      <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
     </div>
   );
 }

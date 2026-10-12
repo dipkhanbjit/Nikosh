@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import auth, health, knowledge, candidates, jobs, jd, shortlist, interviews
+from app.api import auth, health, knowledge, candidates, jobs, jd, shortlist, interviews, join, me
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging_config import setup_logging
@@ -40,3 +40,5 @@ app.include_router(jd.router, prefix=settings.api_prefix)
 app.include_router(shortlist.router, prefix=settings.api_prefix)
 app.include_router(interviews.router, prefix=settings.api_prefix)
 app.include_router(interviews.job_router, prefix=settings.api_prefix)
+app.include_router(join.router, prefix=settings.api_prefix)
+app.include_router(me.router, prefix=settings.api_prefix)

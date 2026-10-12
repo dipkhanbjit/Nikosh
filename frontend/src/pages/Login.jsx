@@ -1,19 +1,20 @@
 import { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { apiRequest } from "../api/client";
 import { Alert, Button, Input } from "../components/ui";
-import { getUser, homePathFor, saveUser } from "../utils/auth";
+import { getUser, homePathFor, safeNext, saveUser } from "../utils/auth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const next = safeNext(useSearchParams()[0].get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const user = getUser();
-  if (user) return <Navigate to={homePathFor(user.role)} replace />;
+  if (user) return <Navigate to={next || homePathFor(user.role)} replace />;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -25,7 +26,7 @@ export default function Login() {
         body: { email, password },
       });
       saveUser(data);
-      navigate(homePathFor(data.role), { replace: true });
+      navigate(next || homePathFor(data.role), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {

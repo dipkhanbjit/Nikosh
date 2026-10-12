@@ -5,6 +5,7 @@ import AppLayout from "./layouts/AppLayout";
 import CandidateHome from "./pages/CandidateHome";
 import Candidates from "./pages/Candidates";
 import Dashboard from "./pages/Dashboard";
+import InterviewJoin from "./pages/InterviewJoin";
 import Interviews from "./pages/Interviews";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
@@ -18,6 +19,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/interview/join/:token" element={<InterviewJoin />} />
 
       <Route element={<ProtectedRoute role="interviewer" />}>
         <Route element={<AppLayout />}>

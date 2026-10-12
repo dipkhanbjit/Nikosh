@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     google_oauth_token_file: str = "secrets/google-oauth-token.json"
     google_form_template_id: str = ""
     company_name: str = "Nirvik Technology"
+    frontend_base_url: str = "http://localhost:3000"
     form_check_interval_minutes: int = 5
     no_show_check_interval_minutes: int = 5
     screening_concurrency: int = 3

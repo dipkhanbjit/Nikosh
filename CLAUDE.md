@@ -23,7 +23,8 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
   `apiRequest` JSON-stringifies the body itself — pass plain objects.
 - MCP server `nikosh-tools` (called via `app/services/mcp_client.call_tool`):
   publish_to_blogger, publish_to_telegram, create_job_form, set_form_open,
-  list_job_applications, download_cv, trash_drive_file.
+  list_job_applications, download_cv, trash_drive_file, send_email,
+  create_calendar_event, delete_calendar_event.
 - Auth: JWT in HttpOnly cookie, roles `interviewer` / `candidate`,
   `require_role()` in `app/api/deps.py`.
 - API prefix `/api/v1`, Swagger at `localhost:8000/docs`.
@@ -87,8 +88,9 @@ Order of work:
   - 6.2.1 Unique interview link (secure token, no candidate login, valid only
     for its session and time window)
   - 6.2.2 Invitation email + Google Calendar event as MCP tools
-    (`send_interview_email`, `create_calendar_event`), triggered automatically
-    on schedule; reschedule updates, cancel removes; status/error stored;
+    (`send_email`, `create_calendar_event`, `delete_calendar_event`), triggered automatically
+    on schedule; cancel removes (reschedule does not update them yet);
+    status/error stored;
     `POST /interviews/{id}/resend-invitation` to retry
 - 6.3 Video Session
   - 6.3.1 Initial interview room (interviewer console + candidate room,

@@ -43,3 +43,14 @@ export const scheduleInterview = (jobId, body) =>
 export const cancelInterview = (id, reason) =>
   apiRequest(`/interviews/${id}/cancel`, { method: "POST", body: { reason } });
 export const markNoShow = (id) => apiRequest(`/interviews/${id}/no-show`, { method: "POST" });
+// New password + email again; retries the calendar event if it failed
+export const resendInvitation = (id) => apiRequest(`/interviews/${id}/resend-invitation`, { method: "POST" });
+
+// Schedule / resend response → what the credentials modal shows (once)
+export const credentialsFrom = (interview) => ({
+  name: interview.candidate_name || "the candidate",
+  email: interview.credentials.email,
+  password: interview.credentials.password,
+  joinUrl: interview.join_url,
+  invitationError: interview.invitation_error,
+});
