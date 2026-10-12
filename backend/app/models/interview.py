@@ -35,5 +35,11 @@ class Interview(TimestampMixin, Base):
     join_token: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, default=lambda: secrets.token_urlsafe(32)
     )
+    # Invitation (Google Calendar event + email); status is sent / failed
+    calendar_event_id: Mapped[str | None] = mapped_column(String(255))
+    calendar_url: Mapped[str | None] = mapped_column(String(500))
+    invitation_status: Mapped[str | None] = mapped_column(String(20))
+    invitation_error: Mapped[str | None] = mapped_column(Text)
+    invitation_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     candidate: Mapped["Candidate"] = relationship(back_populates="interviews")

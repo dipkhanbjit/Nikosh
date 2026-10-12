@@ -4,6 +4,7 @@ import { getCVText, listCandidates } from "../api/candidates";
 import {
   ACTIVE_INTERVIEW_STATUSES,
   INTERVIEW_STATUS,
+  credentialsFrom,
   formatDateTime,
   getShortlist,
   isPast,
@@ -15,7 +16,7 @@ import {
 } from "../api/interviews";
 import { getScoreWeights, listJobs } from "../api/jobs";
 import CandidateProfileModal from "../components/CandidateProfileModal";
-import { copyText } from "../utils/clipboard";
+import CredentialsModal from "../components/CredentialsModal";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Spinner, Table, Textarea } from "../components/ui";
 
 const DEFAULT_TOP_N = 5;
@@ -23,31 +24,7 @@ const MAX_TOP_N = 50; // backend limit
 const DEFAULT_DURATION = 30;
 const MIN_DURATION = 15;
 const MAX_DURATION = 120;
-
-// One read-only value with a Copy button (used for the one-time candidate credentials)
-function CopyField({ label, value }) {
-  const [state, setState] = useState(""); // "", "copied" or "failed"
-
-  const handleCopy = async () => setState((await copyText(value)) ? "copied" : "failed");
-
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm font-medium text-gray-700">{label}</span>
-      <div className="flex gap-2">
-        <input
-          readOnly
-          value={value}
-          onFocus={(e) => e.target.select()}
-          className="min-w-0 flex-1 rounded-md border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-800"
-        />
-        <Button variant="secondary" className="px-3 py-1" onClick={handleCopy}>
-          {state === "copied" ? "Copied" : "Copy"}
-        </Button>
-      </div>
-      {state === "failed" && <p className="text-xs text-red-600">Could not copy. Select the text and copy it manually.</p>}
-    </div>
-  );
-}
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/; // same check as the backend
 
 const todayInDhaka = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
 
@@ -72,9 +49,9 @@ export default function Candidates() {
   const [sendBack, setSendBack] = useState(null); // { topN, removeIds }
   const [revising, setRevising] = useState(false);
   const [interviews, setInterviews] = useState([]);
-  const [scheduling, setScheduling] = useState(null); // { item, date, time, duration, notes }
+  const [scheduling, setScheduling] = useState(null); // { item, email, date, time, duration, notes }
   const [savingInterview, setSavingInterview] = useState(false);
-  const [credentials, setCredentials] = useState(null); // { name, email, password, joinUrl }, shown once
+  const [credentials, setCredentials] = useState(null); // see credentialsFrom(), shown once
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -165,17 +142,18 @@ export default function Candidates() {
     interviews.filter((iv) => iv.candidate_id === candidateId).sort((a, b) => b.id - a.id)[0];
 
   const openSchedule = (item) =>
-    setScheduling({ item, date: "", time: "", duration: DEFAULT_DURATION, notes: "" });
+    setScheduling({ item, email: item.email || "", date: "", time: "", duration: DEFAULT_DURATION, notes: "" });
 
   const scheduleInPast = scheduling?.date && scheduling?.time && isPast(scheduling.date, scheduling.time);
   const durationValid =
     Number.isInteger(scheduling?.duration) &&
     scheduling.duration >= MIN_DURATION &&
     scheduling.duration <= MAX_DURATION;
-  const scheduleValid = scheduling?.date && scheduling?.time && !scheduleInPast && durationValid;
+  const emailValid = EMAIL_PATTERN.test(scheduling?.email?.trim() || "");
+  const scheduleValid = scheduling?.date && scheduling?.time && !scheduleInPast && durationValid && emailValid;
 
   const handleSchedule = async () => {
-    const { item, date, time, duration, notes } = scheduling;
+    const { item, email, date, time, duration, notes } = scheduling;
     setSavingInterview(true);
     setError("");
     setNotice("");
@@ -185,14 +163,10 @@ export default function Candidates() {
         scheduled_at: toScheduledAt(date, time),
         duration_minutes: duration,
         notes: notes.trim() || null,
+        contact_email: email.trim().toLowerCase(),
       });
       setScheduling(null);
-      setCredentials({
-        name: interview.candidate_name || "the candidate",
-        email: interview.credentials.email,
-        password: interview.credentials.password,
-        joinUrl: interview.join_url,
-      });
+      setCredentials(credentialsFrom(interview));
       setInterviews(await listJobInterviews(jobId));
       setNotice(
         `Interview scheduled for ${interview.candidate_name || "the candidate"} on ${formatDateTime(interview.scheduled_at)}.`
@@ -293,8 +267,8 @@ export default function Candidates() {
             <Button
               className="px-3 py-1"
               onClick={() => openSchedule(i)}
-              disabled={active || !i.email}
-              title={!i.email ? "Candidate has no email address" : active ? "Interview already scheduled" : ""}
+              disabled={active}
+              title={active ? "Interview already scheduled" : ""}
             >
               Schedule
             </Button>
@@ -466,9 +440,23 @@ export default function Candidates() {
         {scheduling && (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-gray-700">
-              Interview with <span className="font-semibold">{scheduling.item.full_name || "this candidate"}</span>{" "}
-              ({scheduling.item.email}). Times are in Bangladesh time (GMT+6).
+              Interview with <span className="font-semibold">{scheduling.item.full_name || "this candidate"}</span>.
+              Times are in Bangladesh time (GMT+6).
             </p>
+            <div>
+              <Input
+                label="Contact email"
+                name="contact_email"
+                type="email"
+                required
+                value={scheduling.email}
+                onChange={(e) => setScheduling({ ...scheduling, email: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-gray-500">Login details and the invitation are sent to this address.</p>
+              {scheduling.email.trim() && !emailValid && (
+                <p className="mt-1 text-sm text-red-600">Enter a valid email address.</p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <Input
                 label="Date"
@@ -517,26 +505,7 @@ export default function Candidates() {
         )}
       </Modal>
 
-      <Modal
-        open={Boolean(credentials)}
-        title="Candidate Login Details"
-        onClose={() => setCredentials(null)}
-        closeOnBackdrop={false}
-        footer={<Button onClick={() => setCredentials(null)}>Done</Button>}
-      >
-        {credentials && (
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-gray-700">
-              Send these details to <span className="font-semibold">{credentials.name}</span>. They log in with
-              this email and password, then open the interview link.
-            </p>
-            <CopyField label="Email" value={credentials.email} />
-            <CopyField label="Password" value={credentials.password} />
-            <CopyField label="Interview link" value={credentials.joinUrl} />
-            <Alert type="info">Shown only once. It will be emailed automatically in 6.2.2.</Alert>
-          </div>
-        )}
-      </Modal>
+      <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
 
       <Modal
         open={confirmReplace}

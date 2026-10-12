@@ -52,12 +52,15 @@ def ensure_future(scheduled_at: datetime) -> None:
         raise AppException("Interview time must be in the future", 422, "TIME_IN_PAST")
 
 
-def validate_candidate(db: Session, job: Job, candidate_id: int) -> Candidate:
+def validate_candidate(db: Session, job: Job, candidate_id: int, contact_email: str | None = None) -> Candidate:
     candidate = db.get(Candidate, candidate_id)
     if not candidate or candidate.job_id != job.id:
         raise AppException("Candidate not found for this job", 404, "CANDIDATE_NOT_FOUND")
     if not candidate.shortlisted:
         raise AppException("Only shortlisted candidates can be scheduled", 409, "NOT_SHORTLISTED")
+    if contact_email:
+        # Login and invitation go to this address (saved together with the interview)
+        candidate.email = contact_email.strip().lower()
     if not candidate.email:
         raise AppException("Candidate has no email address", 409, "NO_EMAIL")
     active = db.scalar(

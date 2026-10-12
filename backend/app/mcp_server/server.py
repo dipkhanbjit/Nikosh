@@ -7,6 +7,8 @@ from mcp.server.fastmcp import FastMCP
 from app.core.config import settings
 from app.core.logging_config import setup_logging
 from app.services.blogger import BloggerError, build_post_html, publish_post
+from app.services.google_calendar import create_event, delete_event
+from app.services.google_mail import send_email as send_mail
 from app.services.job_forms import FormError, create_job_form as create_form
 from app.services.job_forms import download_file, list_responses, trash_file
 from app.services.job_forms import set_form_open as set_open
@@ -110,6 +112,45 @@ def trash_drive_file(file_id: str) -> str:
         raise
     state = "trashed" if found else "not_found"
     logger.info("Drive file %s %s", file_id, state)
+    return state
+
+
+@mcp.tool()
+def send_email(to: str, subject: str, html: str) -> str:
+    """Send an HTML email (e.g. an interview invitation) from the company Gmail account.
+    Returns the Gmail message id."""
+    try:
+        message_id = send_mail(to, subject, html)
+    except Exception as exc:  # body is never logged: it may contain a password
+        logger.error("Email '%s' to %s failed: %s", subject, to, exc)
+        raise
+    logger.info("Email '%s' sent to %s (%s)", subject, to, message_id)
+    return message_id
+
+
+@mcp.tool()
+def create_calendar_event(summary: str, description: str, start: str, end: str, attendee_email: str) -> str:
+    """Create a Google Calendar event (Asia/Dhaka) and invite the attendee by email.
+    start/end are ISO 8601 date-times. Returns JSON {event_id, html_link}."""
+    try:
+        event = create_event(summary, description, start, end, attendee_email)
+    except Exception as exc:
+        logger.error("Calendar event '%s' for %s failed: %s", summary, attendee_email, exc)
+        raise
+    logger.info("Calendar event '%s' created for %s: %s", summary, attendee_email, event["event_id"])
+    return json.dumps(event)
+
+
+@mcp.tool()
+def delete_calendar_event(event_id: str) -> str:
+    """Delete a Google Calendar event and notify its attendees. Returns 'deleted' or 'not_found'."""
+    try:
+        found = delete_event(event_id)
+    except Exception as exc:
+        logger.error("Deleting calendar event %s failed: %s", event_id, exc)
+        raise
+    state = "deleted" if found else "not_found"
+    logger.info("Calendar event %s %s", event_id, state)
     return state
 
 
