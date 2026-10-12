@@ -1,18 +1,17 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, Float
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.config import settings
 from app.core.database import Base
 from app.models.base import TimestampMixin
 
-from pgvector.sqlalchemy import Vector
-
-from app.core.config import settings
-
 if TYPE_CHECKING:
+    from app.models.interview import Interview
     from app.models.job import Job
 
 
@@ -51,5 +50,10 @@ class Candidate(TimestampMixin, Base):
     override: Mapped[str | None] = mapped_column(String(20))  # "included" / "excluded" by the interviewer
     override_reason: Mapped[str | None] = mapped_column(String(255))
     override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    shortlisted: Mapped[bool] = mapped_column(default=False, server_default="false")
+    shortlisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     job: Mapped["Job"] = relationship(back_populates="candidates")
+    interviews: Mapped[list["Interview"]] = relationship(
+        back_populates="candidate", cascade="all, delete-orphan"
+    )
