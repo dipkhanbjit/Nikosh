@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     google_form_template_id: str = ""
     company_name: str = "Nirvik Technology"
     form_check_interval_minutes: int = 5
+    no_show_check_interval_minutes: int = 5
     screening_concurrency: int = 3
     blogger_blog_id: str = ""
     cv_storage_dir: str = "storage/cvs"

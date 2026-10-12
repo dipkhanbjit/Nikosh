@@ -1,9 +1,12 @@
+import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.database import SessionLocal
 from app.core.exceptions import AppException
 from app.models import Candidate, Interview, Job
 from app.models.interview import ACTIVE_STATUSES
@@ -55,3 +58,25 @@ def validate_candidate(db: Session, job: Job, candidate_id: int) -> Candidate:
     if active:
         raise AppException("Candidate already has an active interview", 409, "INTERVIEW_EXISTS")
     return candidate
+
+
+def mark_no_shows() -> None:
+    """Mark scheduled interviews whose end time has passed as no-show."""
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        scheduled = db.scalars(select(Interview).where(Interview.status == "scheduled")).all()
+        overdue = [i for i in scheduled if i.scheduled_at + timedelta(minutes=i.duration_minutes) <= now]
+        for interview in overdue:
+            change_status(db, interview, "no_show")
+    if overdue:
+        logger.info("Marked %s overdue interview(s) as no-show", len(overdue))
+
+
+async def no_show_check_loop() -> None:
+    """Background task: every few minutes, mark interviews nobody started as no-show."""
+    while True:
+        try:
+            await asyncio.to_thread(mark_no_shows)
+        except Exception:
+            logger.exception("No-show check failed")
+        await asyncio.sleep(settings.no_show_check_interval_minutes * 60)

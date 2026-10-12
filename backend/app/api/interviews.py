@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -128,4 +129,7 @@ def cancel_interview(interview_id: int, body: CancelRequest, db: Session = Depen
 
 @router.post("/{interview_id}/no-show", response_model=InterviewOut)
 def mark_no_show(interview_id: int, db: Session = Depends(get_db)):
-    return _to_out(db, change_status(db, _get_interview(db, interview_id), "no_show"))
+    interview = _get_interview(db, interview_id)
+    if interview.scheduled_at > datetime.now(timezone.utc):
+        raise AppException("Interview has not started yet", 409, "TOO_EARLY")
+    return _to_out(db, change_status(db, interview, "no_show"))
