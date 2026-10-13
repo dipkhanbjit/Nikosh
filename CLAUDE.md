@@ -160,6 +160,8 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
 - F8 AI Assistant: plug the existing ChatPanel into the left "AI Assistant"
   tab; RAG over company docs + candidate CV + job requirements (+ recent
   transcript later); Gemini only on demand.
+- Module 10 cleanup: fix the existing eslint `react-hooks/set-state-in-effect`
+  errors (RecordingsModal, JobFormModal, Candidates, InterviewJoin).
 - Two-PC testing: the tunnel URL changes every start; set
   `FRONTEND_BASE_URL` and run `docker compose up -d backend` (not
   `restart`); switch back to localhost afterwards.

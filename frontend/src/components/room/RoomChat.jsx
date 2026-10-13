@@ -85,7 +85,8 @@ function Bubble({ message, own, interviewId }) {
 
 // In-call chat panel (both sides). Messages come from useRoomChat; text is sent over the room
 // socket (onSend returns false if not connected), files through the upload endpoint.
-export default function RoomChat({ interviewId, ownRole, messages, loadError, onSend, onUploaded, readOnly }) {
+// offline: own room socket is down; input is disabled (nothing queued, the draft is kept) until it is back.
+export default function RoomChat({ interviewId, ownRole, messages, loadError, onSend, onUploaded, readOnly, offline }) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -98,7 +99,7 @@ export default function RoomChat({ interviewId, ownRole, messages, loadError, on
 
   const send = () => {
     const value = text.trim();
-    if (!value || readOnly) return;
+    if (!value || readOnly || offline) return;
     if (!onSend(value)) {
       setError("Not connected. Please wait a moment and try again.");
       return;
@@ -159,13 +160,17 @@ export default function RoomChat({ interviewId, ownRole, messages, loadError, on
         </p>
       ) : (
         <div className="shrink-0 border-t border-gray-200 p-2.5">
-          {error && <p className="mb-1.5 px-1 text-xs text-red-600">{error}</p>}
+          {offline ? (
+            <p className="mb-1.5 px-1 text-xs text-amber-700">You&apos;re offline - reconnecting...</p>
+          ) : (
+            error && <p className="mb-1.5 px-1 text-xs text-red-600">{error}</p>
+          )}
           <div className="flex items-end gap-1.5">
             <input ref={fileRef} type="file" accept={CHAT_FILE_TYPES} onChange={handleFile} className="hidden" />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || offline}
               title={`Share a file (max ${CHAT_MAX_FILE_MB} MB)`}
               aria-label="Share a file"
               className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed"
@@ -178,13 +183,14 @@ export default function RoomChat({ interviewId, ownRole, messages, loadError, on
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Send a message"
+              disabled={offline}
               maxLength={2000}
-              className="max-h-24 min-h-9 flex-1 resize-none rounded-2xl border border-gray-300 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="max-h-24 min-h-9 flex-1 resize-none rounded-2xl border border-gray-300 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
             />
             <button
               type="button"
               onClick={send}
-              disabled={!text.trim()}
+              disabled={!text.trim() || offline}
               className="h-9 shrink-0 cursor-pointer rounded-full bg-indigo-600 px-3.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Send
