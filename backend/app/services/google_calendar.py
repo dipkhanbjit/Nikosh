@@ -18,9 +18,12 @@ def _google_error(action: str, exc: HttpError) -> CalendarError:
     return CalendarError(f"Could not {action} (Google API error {exc.status_code})")
 
 
-def create_event(summary: str, description: str, start: str, end: str, attendee_email: str) -> dict:
-    """Create an event on the primary calendar and invite the attendee.
-    start/end are ISO 8601 date-times. Returns {event_id, html_link}."""
+def create_event(
+    summary: str, description: str, start: str, end: str, attendee_email: str, uid: str = ""
+) -> dict:
+    """Create an event on the primary calendar with the attendee listed as a guest.
+    Google sends no email (the app sends its own invitation with an .ics); uid, if given,
+    becomes the event's iCalUID so both are the same event. Returns {event_id, html_link}."""
     body = {
         "summary": summary,
         "description": description,
@@ -28,9 +31,11 @@ def create_event(summary: str, description: str, start: str, end: str, attendee_
         "end": {"dateTime": end, "timeZone": TIMEZONE},
         "attendees": [{"email": attendee_email}],
     }
+    if uid:
+        body["iCalUID"] = uid
     try:
         event = calendar_service().events().insert(
-            calendarId="primary", body=body, sendUpdates="all"
+            calendarId="primary", body=body, sendUpdates="none"
         ).execute()
     except HttpError as exc:
         raise _google_error("create the calendar event", exc) from None
@@ -38,10 +43,10 @@ def create_event(summary: str, description: str, start: str, end: str, attendee_
 
 
 def delete_event(event_id: str) -> bool:
-    """Delete an event and notify attendees. Returns False if it no longer exists."""
+    """Delete an event without emailing attendees. Returns False if it no longer exists."""
     try:
         calendar_service().events().delete(
-            calendarId="primary", eventId=event_id, sendUpdates="all"
+            calendarId="primary", eventId=event_id, sendUpdates="none"
         ).execute()
     except HttpError as exc:
         if exc.status_code in (404, 410):

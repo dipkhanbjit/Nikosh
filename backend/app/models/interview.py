@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -41,5 +41,7 @@ class Interview(TimestampMixin, Base):
     invitation_status: Mapped[str | None] = mapped_column(String(20))
     invitation_error: Mapped[str | None] = mapped_column(Text)
     invitation_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # .ics SEQUENCE: raised on every invitation / cancellation so calendars apply the update
+    invitation_sequence: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
 
     candidate: Mapped["Candidate"] = relationship(back_populates="interviews")
