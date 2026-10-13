@@ -1,14 +1,16 @@
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
-from app.models import Interview, Job, User
+from app.models import Interview, InterviewAudioPart, Job, User
 from app.schemas.interview import (
     CancelRequest,
     Credentials,
@@ -16,6 +18,8 @@ from app.schemas.interview import (
     InterviewOut,
     InterviewUpdate,
 )
+from app.schemas.interview_audio import InterviewAudioPartOut
+from app.services.audio_recorder import part_sizes
 from app.services.interviews import (
     change_status,
     ensure_candidate_account,
@@ -208,3 +212,48 @@ def end_interview(interview_id: int, db: Session = Depends(get_db)):
         raise
     push_from_thread(interview.id, end_room, "completed")
     return _to_out(db, interview)
+
+
+# --- Recorded audio (6.4.2): interviewer only (the whole router is), candidates get 403
+
+
+@router.get("/{interview_id}/audio", response_model=list[InterviewAudioPartOut])
+def list_audio_parts(interview_id: int, db: Session = Depends(get_db)):
+    interview = _get_interview(db, interview_id)
+    parts = db.scalars(
+        select(InterviewAudioPart)
+        .where(InterviewAudioPart.interview_id == interview.id)
+        .order_by(InterviewAudioPart.start_offset_s, InterviewAudioPart.id)
+    ).all()
+    result = []
+    for part in parts:
+        duration_s, size_bytes = part_sizes(part)
+        result.append(
+            InterviewAudioPartOut(
+                id=part.id,
+                role=part.role,
+                part_no=part.part_no,
+                start_offset_s=part.start_offset_s,
+                duration_s=duration_s,
+                size_bytes=size_bytes,
+                created_at=part.created_at,
+            )
+        )
+    return result
+
+
+@router.get("/{interview_id}/audio/{part_id}")
+def stream_audio_part(interview_id: int, part_id: int, db: Session = Depends(get_db)):
+    interview = _get_interview(db, interview_id)
+    part = db.get(InterviewAudioPart, part_id)
+    if not part or part.interview_id != interview.id or not Path(part.file_path).exists():
+        logger.warning("Interview %s: audio part %s not found", interview.id, part_id)
+        raise AppException("Recording not found", 404, "RECORDING_NOT_FOUND")
+    logger.info("Interview %s: audio part %s streamed", interview.id, part.id)
+    return FileResponse(
+        part.file_path,
+        media_type="audio/wav",
+        filename=Path(part.file_path).name,
+        content_disposition_type="inline",  # play in the page; the browser can still save it
+        headers={"X-Content-Type-Options": "nosniff"},
+    )

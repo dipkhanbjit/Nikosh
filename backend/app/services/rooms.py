@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 import anyio.from_thread
 from fastapi import WebSocket
 
+from app.services.audio import audio
+
 logger = logging.getLogger(__name__)
 
 # Close codes: 1000 normal, 4000 replaced by a newer connection (do not reconnect)
@@ -104,6 +106,7 @@ async def end_room(interview_id: int, reason: str) -> None:
     """The interview is over (reason: completed / cancelled / no_show): tell both sides and close."""
     await rooms.broadcast(interview_id, {"type": "interview-ended", "reason": reason})
     await rooms.close_room(interview_id, f"Interview ended ({reason})")
+    await audio.close_interview(interview_id, f"Interview ended ({reason})")
 
 
 def push_from_thread(interview_id: int, push, *args) -> None:

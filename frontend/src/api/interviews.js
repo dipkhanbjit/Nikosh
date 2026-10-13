@@ -58,3 +58,7 @@ export const credentialsFrom = (interview) => ({
   joinUrl: interview.join_url,
   invitationError: interview.invitation_error,
 });
+
+// Recorded audio parts (completed interviews); the URL is used directly by an <audio> element
+export const listAudioParts = (id) => apiRequest(`/interviews/${id}/audio`);
+export const audioPartUrl = (id, partId) => `/api/v1/interviews/${id}/audio/${partId}`;

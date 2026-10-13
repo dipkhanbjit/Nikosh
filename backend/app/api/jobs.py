@@ -10,6 +10,7 @@ from app.schemas.job import JobCreate, JobOut, JobUpdate, ScoreWeights, ScoreWei
 from app.services.candidate_scoring import job_weights, recalculate_job_scores
 from app.services.deadlines import end_of_day
 from app.services.form_status import update_form_state
+from app.services.audio_recorder import delete_interview_audio
 from app.services.interview_chat import delete_interview_files
 from app.services.job_posting import publish_job
 from app.services.mcp_client import MCPToolError, call_tool
@@ -112,6 +113,7 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     for path in cv_paths:
         delete_file(path)
     delete_interview_files(interview_ids)
+    delete_interview_audio(interview_ids)
 
 
 @router.post("/{job_id}/post", response_model=JobOut, dependencies=[Depends(interviewer_only)])

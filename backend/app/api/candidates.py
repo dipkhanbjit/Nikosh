@@ -23,6 +23,7 @@ from app.schemas.candidate import (
 from app.services.candidate_scoring import score_candidate
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
+from app.services.audio_recorder import delete_interview_audio
 from app.services.interview_chat import delete_interview_files
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.ranking import ranked_candidates
@@ -203,4 +204,5 @@ def delete_candidate(candidate_id: int, drive: bool = False, db: Session = Depen
     db.commit()
     delete_file(cv_path)
     delete_interview_files(interview_ids)
+    delete_interview_audio(interview_ids)
     logger.info("Candidate %s deleted%s", candidate_id, " (CV also removed from Drive)" if drive else "")

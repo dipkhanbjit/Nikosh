@@ -4,9 +4,9 @@ const RETRY_MS = 2000;
 const MAX_RETRY_MS = 10000;
 
 // No reconnect after: normal close (interview ended), replaced by another tab, or refused (44xx)
-const isFinal = (code) => code === 1000 || code === 4000 || (code >= 4400 && code < 4500);
+export const isFinal = (code) => code === 1000 || code === 4000 || (code >= 4400 && code < 4500);
 
-function socketUrl(path) {
+export function socketUrl(path) {
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   return `${scheme}://${window.location.host}/api/v1${path}`;
 }

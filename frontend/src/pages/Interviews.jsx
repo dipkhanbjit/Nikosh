@@ -11,6 +11,7 @@ import {
   resendInvitation,
 } from "../api/interviews";
 import CredentialsModal from "../components/CredentialsModal";
+import RecordingsModal from "../components/RecordingsModal";
 import { Alert, Badge, Button, Card, Modal, PageHeader, Table, Textarea } from "../components/ui";
 import { copyText } from "../utils/clipboard";
 
@@ -32,6 +33,7 @@ export default function Interviews() {
   const [notice, setNotice] = useState("");
   const [manualLink, setManualLink] = useState(null); // { name, url } when automatic copy failed
   const [credentials, setCredentials] = useState(null); // new login details after a resend, shown once
+  const [recordingsOf, setRecordingsOf] = useState(null); // completed interview whose audio is listed
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
@@ -148,6 +150,11 @@ export default function Interviews() {
           {iv.room_open && (
             <Button className="px-3 py-1" onClick={() => navigate(`/interviews/${iv.id}/room`)}>
               {iv.status === "in_progress" ? "Rejoin interview" : "Start interview"}
+            </Button>
+          )}
+          {iv.status === "completed" && (
+            <Button variant="secondary" className="px-3 py-1" onClick={() => setRecordingsOf(iv)}>
+              Recordings
             </Button>
           )}
           {iv.status === "scheduled" && (
@@ -270,6 +277,7 @@ export default function Interviews() {
       </Modal>
 
       <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
+      <RecordingsModal interview={recordingsOf} onClose={() => setRecordingsOf(null)} />
     </div>
   );
 }

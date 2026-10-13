@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     cv_max_file_mb: int = 10
     interview_files_dir: str = "storage/interview_files"
     chat_max_file_mb: int = 10
+    interview_audio_dir: str = "storage/interview_audio"
+    # Speech-to-text for interview audio: "stub" (logs only); Module 7 adds real engines
+    transcriber: str = "stub"
     default_application_days: int = 21
 
 

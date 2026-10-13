@@ -8,6 +8,7 @@ import { TranscriptIcon } from "../components/room/icons";
 import RoomChat from "../components/room/RoomChat";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Button, Modal, Spinner } from "../components/ui";
+import useAudioCapture from "../hooks/useAudioCapture";
 import usePeerConnection from "../hooks/usePeerConnection";
 import useRoomChat from "../hooks/useRoomChat";
 import useRoomSocket from "../hooks/useRoomSocket";
@@ -63,6 +64,13 @@ export default function InterviewerRoom() {
 
   // The call stops when the room is closed
   const call = usePeerConnection({ role: "interviewer", stream: closed ? null : stream, sendSignal });
+
+  // Own microphone to the backend while the interview is running (joining starts it)
+  const capturing = stream && interview?.status === "in_progress" && !closed;
+  const { recording } = useAudioCapture({
+    path: capturing ? `/ws/audio/interviews/${id}` : null,
+    track: stream?.getAudioTracks()[0] || null,
+  });
 
   useEffect(() => {
     getInterview(id)
@@ -148,6 +156,7 @@ export default function InterviewerRoom() {
         sharing={call.sharing}
         onToggleShare={call.toggleShare}
         onLeave={() => navigate("/interviews")}
+        recording={recording}
         endControl={
           <Button variant="danger" onClick={() => setConfirmEnd(true)} className="h-11 rounded-full px-5">
             End interview
