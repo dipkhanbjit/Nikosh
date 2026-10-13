@@ -10,6 +10,7 @@ from app.core.exceptions import AppException
 from app.core.security import decode_access_token
 from app.models import Interview, User
 from app.services.interview_chat import add_text, ensure_chat_open, to_dict
+from app.services.audio import BYTES_PER_SECOND, AudioConnection, audio
 from app.services.interviews import check_join_link, room_open
 from app.services.rooms import Connection, rooms
 
@@ -24,6 +25,9 @@ IDLE_TIMEOUT_SECONDS = 45  # no message (not even a pong) for this long = dead c
 # Close codes: 4401 not logged in, 4403 wrong role / not your interview, 4404 not found,
 # 4409 room not open, 4410 link expired, 4001 timed out (client may reconnect)
 CLOSE_TIMEOUT = 4001
+# Audio sockets also: 4409 interview not in progress, 4413 audio chunk too large
+CLOSE_TOO_LARGE = 4413
+MAX_AUDIO_CHUNK = 64 * 1024  # ~2 s of LINEAR16 at 16 kHz; the browser sends ~100 ms chunks
 
 
 class Refused(Exception):
@@ -165,3 +169,75 @@ async def candidate_socket(ws: WebSocket, token: str):
         return
     await ws.accept()
     await _run(ws, info, "candidate")
+
+
+# --- Audio capture (6.4.1): each browser sends only its own microphone as binary
+# LINEAR16 chunks (16 kHz mono). The speaker role comes from the login, never from the client.
+# Text frames (the client's ping while muted) only keep the connection alive.
+
+
+def _require_in_progress(info: dict) -> dict:
+    if info["status"] != "in_progress":
+        raise Refused(4409, "The interview is not in progress")
+    return info
+
+
+async def _run_audio(ws: WebSocket, interview_id: int, role: str) -> None:
+    conn = AudioConnection(ws, role)
+    await audio.join(interview_id, conn)
+    logger.info("Interview %s: %s audio connected", interview_id, role)
+    try:
+        while True:
+            message = await asyncio.wait_for(ws.receive(), IDLE_TIMEOUT_SECONDS)
+            if message["type"] == "websocket.disconnect":
+                break
+            chunk = message.get("bytes")
+            if not chunk:
+                continue  # ping (text)
+            if len(chunk) > MAX_AUDIO_CHUNK:
+                logger.warning("Interview %s: %s audio chunk too large (%d bytes)", interview_id, role, len(chunk))
+                await conn.close(CLOSE_TOO_LARGE, "Audio chunk too large")
+                break
+            audio.add_chunk(interview_id, conn, len(chunk))
+    except asyncio.TimeoutError:
+        logger.warning("Interview %s: %s audio connection timed out", interview_id, role)
+        await conn.close(CLOSE_TIMEOUT, "Connection timed out")
+    except (WebSocketDisconnect, RuntimeError):
+        pass  # closed by the client, or by us (replaced / interview ended)
+    finally:
+        await audio.leave(interview_id, conn)
+        total = audio.total(interview_id, role)
+        logger.info(
+            "Interview %s: %s audio disconnected (%.1f s this connection, %.1f s total)",
+            interview_id,
+            role,
+            conn.bytes_received / BYTES_PER_SECOND,
+            total.seconds,
+        )
+
+
+@router.websocket("/audio/interviews/{interview_id}")
+async def interviewer_audio_socket(ws: WebSocket, interview_id: int):
+    try:
+        info = await asyncio.to_thread(_authorize_interviewer, ws.cookies.get("access_token"), interview_id)
+        _require_in_progress(info)
+    except Refused as refused:
+        logger.warning("Interview %s: interviewer audio refused (%s %s)", interview_id, refused.code, refused.reason)
+        await _refuse(ws, refused)
+        return
+    await ws.accept()
+    await _run_audio(ws, interview_id, "interviewer")
+
+
+@router.websocket("/audio/join/{token}")
+async def candidate_audio_socket(ws: WebSocket, token: str):
+    short = token[:8]  # never log the full token
+    try:
+        info = await asyncio.to_thread(_authorize_candidate, ws.cookies.get("access_token"), token)
+        _require_in_progress(info)
+    except Refused as refused:
+        logger.warning("Candidate audio for link %s... refused (%s %s)", short, refused.code, refused.reason)
+        await _refuse(ws, refused)
+        return
+    await ws.accept()
+    await _run_audio(ws, info["interview_id"], "candidate")

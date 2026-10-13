@@ -117,6 +117,7 @@ function SidePanel({ title, open, onClose, children }) {
 // sharing / onToggleShare: own screen share (usePeerConnection).
 // leftPanel = { title, content } (interviewer only); chat = { open, onToggle, unread, content };
 // endControl = interviewer "End interview" button.
+// recording: own audio is being sent (useAudioCapture); recordingNotice: line shown to the candidate.
 export default function RoomLayout({
   jobTitle,
   candidateName,
@@ -135,6 +136,8 @@ export default function RoomLayout({
   leftPanel,
   chat,
   bottomPanel,
+  recording,
+  recordingNotice,
 }) {
   const selfRef = useRef(null);
   const remoteRef = useRef(null);
@@ -189,12 +192,19 @@ export default function RoomLayout({
 
       <main className="flex min-w-0 flex-1 flex-col gap-3">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-gray-900 shadow-sm">
-          <header className="flex h-14 shrink-0 items-center justify-between gap-4 px-5">
+          <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 px-5 py-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">{jobTitle}</p>
               <p className="truncate text-xs text-gray-400">Interview with {candidateName || "—"}</p>
+              {recordingNotice && <p className="truncate text-xs text-gray-400">{recordingNotice}</p>}
             </div>
             <div className="flex shrink-0 items-center gap-3">
+              {recording && (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-red-300">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                  Recording
+                </span>
+              )}
               <span className="flex items-center gap-1.5 text-xs text-gray-300">
                 <span className={`h-2 w-2 rounded-full ${badge.dot}`} />
                 {badge.label}

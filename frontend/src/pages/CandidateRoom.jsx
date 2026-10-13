@@ -6,6 +6,7 @@ import DeviceCheck from "../components/room/DeviceCheck";
 import RoomChat from "../components/room/RoomChat";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Spinner } from "../components/ui";
+import useAudioCapture from "../hooks/useAudioCapture";
 import usePeerConnection from "../hooks/usePeerConnection";
 import useRoomChat from "../hooks/useRoomChat";
 import useRoomSocket from "../hooks/useRoomSocket";
@@ -74,6 +75,13 @@ export default function CandidateRoom() {
   // The call stops when the interview ends or the room is closed
   const call = usePeerConnection({ role: "candidate", stream: endedReason || closed ? null : stream, sendSignal });
 
+  // Own microphone to the backend while the interview is running (room-state / interview-started)
+  const capturing = stream && info?.status === "in_progress" && !endedReason && !closed;
+  const { recording } = useAudioCapture({
+    path: capturing ? `/ws/audio/join/${token}` : null,
+    track: stream?.getAudioTracks()[0] || null,
+  });
+
   useEffect(() => {
     if (!loggedIn) return;
     getRoomInfo(token)
@@ -134,6 +142,8 @@ export default function CandidateRoom() {
       sharing={call.sharing}
       onToggleShare={call.toggleShare}
       onLeave={() => navigate(`/interview/join/${token}`)}
+      recording={recording}
+      recordingNotice="This interview is recorded for transcription."
       chat={{
         open: chatOpen,
         onToggle: () => setChatOpen(!chatOpen),
