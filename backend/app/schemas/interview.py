@@ -44,6 +44,7 @@ class InterviewOut(BaseModel):
     ended_at: datetime | None
     cancel_reason: str | None
     join_url: str
+    room_open: bool = False  # the interviewer can enter the interview room now
     calendar_url: str | None
     invitation_status: str | None
     invitation_error: str | None

@@ -89,6 +89,9 @@ class CandidateText(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
     cv_filename: str | None
     extraction_status: str
     cv_text: str | None

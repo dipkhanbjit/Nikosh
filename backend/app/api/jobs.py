@@ -10,6 +10,7 @@ from app.schemas.job import JobCreate, JobOut, JobUpdate, ScoreWeights, ScoreWei
 from app.services.candidate_scoring import job_weights, recalculate_job_scores
 from app.services.deadlines import end_of_day
 from app.services.form_status import update_form_state
+from app.services.interview_chat import delete_interview_files
 from app.services.job_posting import publish_job
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.storage import delete_file
@@ -105,10 +106,12 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
         except MCPToolError:
             pass  # the job is deleted anyway; the failure is logged by the MCP client
     cv_paths = [c.cv_file_path for c in job.candidates]
+    interview_ids = [i.id for c in job.candidates for i in c.interviews]  # messages go with the DB cascade
     db.delete(job)
     db.commit()
     for path in cv_paths:
         delete_file(path)
+    delete_interview_files(interview_ids)
 
 
 @router.post("/{job_id}/post", response_model=JobOut, dependencies=[Depends(interviewer_only)])

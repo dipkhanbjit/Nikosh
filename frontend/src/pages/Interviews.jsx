@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   INTERVIEW_STATUS,
@@ -22,6 +23,7 @@ const ACTION_TEXT = {
 };
 
 export default function Interviews() {
+  const navigate = useNavigate();
   const [interviews, setInterviews] = useState([]);
   const [status, setStatus] = useState("");
   const [action, setAction] = useState(null); // { interview, type: "cancel" | "no_show" | "resend" }
@@ -141,25 +143,33 @@ export default function Interviews() {
     {
       key: "actions",
       label: "",
-      render: (iv) =>
-        iv.status === "scheduled" && (
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" className="px-3 py-1" onClick={() => handleCopy(iv)}>
-              Copy link
+      render: (iv) => (
+        <div className="flex justify-end gap-2">
+          {iv.room_open && (
+            <Button className="px-3 py-1" onClick={() => navigate(`/interviews/${iv.id}/room`)}>
+              {iv.status === "in_progress" ? "Rejoin interview" : "Start interview"}
             </Button>
-            {new Date(iv.scheduled_at) <= new Date() && (
-              <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "no_show")}>
-                No-show
+          )}
+          {iv.status === "scheduled" && (
+            <>
+              <Button variant="secondary" className="px-3 py-1" onClick={() => handleCopy(iv)}>
+                Copy link
               </Button>
-            )}
-            <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "resend")}>
-              Resend
-            </Button>
-            <Button variant="secondary" className="px-3 py-1 text-red-600" onClick={() => openAction(iv, "cancel")}>
-              Cancel
-            </Button>
-          </div>
-        ),
+              {new Date(iv.scheduled_at) <= new Date() && (
+                <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "no_show")}>
+                  No-show
+                </Button>
+              )}
+              <Button variant="secondary" className="px-3 py-1" onClick={() => openAction(iv, "resend")}>
+                Resend
+              </Button>
+              <Button variant="secondary" className="px-3 py-1 text-red-600" onClick={() => openAction(iv, "cancel")}>
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
+      ),
     },
   ];
 

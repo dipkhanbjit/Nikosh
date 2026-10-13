@@ -56,3 +56,4 @@ backend/secrets/
 backend/logs/
 
 backend/storage/
+backend/storage/interview_files/

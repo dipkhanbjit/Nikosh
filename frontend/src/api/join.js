@@ -5,3 +5,6 @@ export const getJoinInfo = (token) => apiRequest(`/join/${encodeURIComponent(tok
 
 // The logged-in candidate's own interviews
 export const getMyInterviews = () => apiRequest("/me/interviews");
+
+// Candidate room: same checks as the join page; 409 ROOM_NOT_OPEN if it is too early
+export const getRoomInfo = (token) => apiRequest(`/join/${encodeURIComponent(token)}/room`);
