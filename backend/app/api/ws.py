@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.core.exceptions import AppException
 from app.core.security import decode_access_token
 from app.models import Interview, User
+from app.services.interview_chat import add_text, ensure_chat_open, to_dict
 from app.services.interviews import check_join_link, room_open
 from app.services.rooms import Connection, rooms
 
@@ -79,6 +80,23 @@ def _authorize_candidate(access_token: str | None, token: str) -> dict:
         return {**_room_info(interview), "name": interview.candidate.full_name or user.full_name}
 
 
+def _save_chat(interview_id: int, role: str, name: str, text) -> dict | None:
+    """Save a chat text (own DB session); None if empty or the chat is closed."""
+    if not isinstance(text, str):
+        return None
+    with SessionLocal() as db:
+        interview = db.get(Interview, interview_id)
+        if not interview:
+            return None
+        try:
+            ensure_chat_open(interview)
+        except AppException:
+            logger.warning("Interview %s: %s chat message refused (chat closed)", interview_id, role)
+            return None
+        message = add_text(db, interview, role, name, text)
+        return to_dict(message) if message else None
+
+
 async def _ping(conn: Connection) -> None:
     while True:
         await asyncio.sleep(PING_SECONDS)
@@ -102,6 +120,10 @@ async def _run(ws: WebSocket, info: dict, role: str) -> None:
                 continue
             if message.get("type") == "signal":
                 await rooms.relay_signal(interview_id, role, message.get("data"))
+            elif message.get("type") == "chat":
+                saved = await asyncio.to_thread(_save_chat, interview_id, role, info["name"], message.get("text"))
+                if saved:
+                    await rooms.broadcast(interview_id, {"type": "chat", "message": saved})
             # "pong" and unknown types only keep the connection alive
     except asyncio.TimeoutError:
         logger.warning("Interview %s: %s connection timed out", interview_id, role)

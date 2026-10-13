@@ -49,6 +49,7 @@ def get_room_info(
         raise AppException("The interview room is not open yet", 409, "ROOM_NOT_OPEN")
     logger.info("Interview %s: candidate entered the room", interview.id)
     return RoomInfo(
+        interview_id=interview.id,
         job_title=db.get(Job, interview.job_id).title,
         candidate_name=interview.candidate.full_name,
         status=interview.status,

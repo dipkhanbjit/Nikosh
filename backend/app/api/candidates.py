@@ -23,6 +23,7 @@ from app.schemas.candidate import (
 from app.services.candidate_scoring import score_candidate
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
+from app.services.interview_chat import delete_interview_files
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.ranking import ranked_candidates
 from app.services.screening_runs import execute_run, latest_run, start_screening
@@ -197,7 +198,9 @@ def delete_candidate(candidate_id: int, drive: bool = False, db: Session = Depen
         db.add(DeletedApplication(job_id=candidate.job_id, source_file_id=candidate.source_file_id))
 
     cv_path = candidate.cv_file_path
+    interview_ids = [i.id for i in candidate.interviews]  # chat messages go with the DB cascade
     db.delete(candidate)
     db.commit()
     delete_file(cv_path)
+    delete_interview_files(interview_ids)
     logger.info("Candidate %s deleted%s", candidate_id, " (CV also removed from Drive)" if drive else "")

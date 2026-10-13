@@ -3,9 +3,11 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 
 import { getRoomInfo } from "../api/join";
 import DeviceCheck from "../components/room/DeviceCheck";
+import RoomChat from "../components/room/RoomChat";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Spinner } from "../components/ui";
 import usePeerConnection from "../hooks/usePeerConnection";
+import useRoomChat from "../hooks/useRoomChat";
 import useRoomSocket from "../hooks/useRoomSocket";
 import { getUser } from "../utils/auth";
 
@@ -52,11 +54,15 @@ export default function CandidateRoom() {
   const [error, setError] = useState("");
   const [stream, setStream] = useState(null);
   const [endedReason, setEndedReason] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const chat = useRoomChat(info?.interview_id, { ownRole: "candidate", open: chatOpen });
 
-  const { peer, closed, sendSignal } = useRoomSocket(stream ? `/ws/join/${token}` : null, {
+  const { peer, closed, sendSignal, sendChat } = useRoomSocket(stream ? `/ws/join/${token}` : null, {
     onSignal: (data) => call.handleSignal(data),
     onEvent: (message) => {
       call.handleEvent(message);
+      if (message.type === "chat") chat.receive(message.message);
+      if (message.type === "room-state") chat.reload(); // catch up after a reconnect
       if (message.type === "room-state" || message.type === "interview-started") {
         setInfo((current) => ({ ...current, started_at: message.started_at, status: message.status || "in_progress" }));
       } else if (message.type === "interview-ended") {
@@ -128,6 +134,22 @@ export default function CandidateRoom() {
       sharing={call.sharing}
       onToggleShare={call.toggleShare}
       onLeave={() => navigate(`/interview/join/${token}`)}
+      chat={{
+        open: chatOpen,
+        onToggle: () => setChatOpen(!chatOpen),
+        unread: chat.unread,
+        content: (
+          <RoomChat
+            interviewId={info.interview_id}
+            ownRole="candidate"
+            messages={chat.messages}
+            loadError={chat.error}
+            onSend={sendChat}
+            onUploaded={chat.receive}
+            readOnly={Boolean(endedReason || closed)}
+          />
+        ),
+      }}
     />
   );
 }

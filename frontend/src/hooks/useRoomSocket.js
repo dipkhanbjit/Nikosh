@@ -14,8 +14,9 @@ function socketUrl(path) {
 // Signaling socket for the interview room.
 //   path: "/ws/interviews/<id>" or "/ws/join/<token>"; null = not connected yet
 //   onSignal(data): a "signal" from the other participant (WebRTC data in 6.3.3)
-//   onEvent(message): room-state, peer-joined, peer-left, interview-started, interview-ended
-// Returns { connected, peer, sendSignal, closed }. peer = { role, name } or null;
+//   onEvent(message): room-state, peer-joined, peer-left, interview-started, interview-ended,
+//     chat ({ type: "chat", message } - saved on the server, sent to both sides)
+// Returns { connected, peer, sendSignal, sendChat, closed }. peer = { role, name } or null;
 // closed = { code, reason } once the socket is closed for good.
 export default function useRoomSocket(path, { onSignal, onEvent } = {}) {
   const socketRef = useRef(null);
@@ -97,5 +98,13 @@ export default function useRoomSocket(path, { onSignal, onEvent } = {}) {
     return true;
   }, []);
 
-  return { connected, peer, sendSignal, closed };
+  // Send an in-call chat text; it comes back to both sides as a "chat" event once saved
+  const sendChat = useCallback((text) => {
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: "chat", text }));
+    return true;
+  }, []);
+
+  return { connected, peer, sendSignal, sendChat, closed };
 }

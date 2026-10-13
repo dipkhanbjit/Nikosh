@@ -27,8 +27,10 @@ class MyInterview(BaseModel):
 
 
 class RoomInfo(BaseModel):
-    """What the candidate's interview room shows. No internal IDs, CV or scores."""
+    """What the candidate's interview room shows. No CV or scores; interview_id only for the
+    in-call chat endpoints (they check that the interview is the candidate's own)."""
 
+    interview_id: int
     job_title: str
     candidate_name: str | None
     status: str
