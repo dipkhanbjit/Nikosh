@@ -13,6 +13,7 @@ from app.core.exceptions import AppException
 from app.core.security import hash_password
 from app.models import Candidate, Interview, Job, User
 from app.models.interview import ACTIVE_STATUSES
+from app.services.rooms import end_room
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,27 @@ def room_open(interview: Interview) -> bool:
     if interview.status != "scheduled":
         return False
     return opens_at(interview) <= datetime.now(timezone.utc) <= closes_at(interview)
+
+
+def check_join_link(db: Session, token: str, user: User) -> tuple[Interview, str]:
+    """Same checks for the join page, the room and the room socket: valid link, own interview,
+    not expired. Returns the interview and "too_early" or "ready"."""
+    short = token[:8]  # never log the full token
+    interview = db.scalar(select(Interview).where(Interview.join_token == token))
+    if not interview:
+        logger.warning("Join attempt with invalid link %s...", short)
+        raise AppException("This interview link is not valid", 404, "INVALID_LINK")
+    if interview.candidate.user_id != user.id:
+        logger.warning("Join attempt for interview %s by another account (user %s)", interview.id, user.id)
+        raise AppException("This interview belongs to another account", 403, "NOT_YOUR_INTERVIEW")
+
+    now = datetime.now(timezone.utc)
+    if interview.status == "in_progress":
+        return interview, "ready"  # no expiry while the interview is running
+    if interview.status != "scheduled" or now > closes_at(interview):
+        logger.warning("Join attempt with expired link for interview %s (%s)", interview.id, interview.status)
+        raise AppException("This interview link is no longer valid", 410, "LINK_EXPIRED")
+    return interview, "too_early" if now < opens_at(interview) else "ready"
 
 
 def join_url(interview: Interview) -> str:
@@ -120,8 +142,8 @@ def ensure_candidate_account(db: Session, candidate: Candidate) -> tuple[str, st
     return email, password
 
 
-def mark_no_shows() -> None:
-    """Mark scheduled interviews whose end time has passed as no-show."""
+def mark_no_shows() -> list[int]:
+    """Mark scheduled interviews whose end time has passed as no-show. Returns their ids."""
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         scheduled = db.scalars(select(Interview).where(Interview.status == "scheduled")).all()
@@ -130,13 +152,15 @@ def mark_no_shows() -> None:
             change_status(db, interview, "no_show")
     if overdue:
         logger.info("Marked %s overdue interview(s) as no-show", len(overdue))
+    return [i.id for i in overdue]
 
 
 async def no_show_check_loop() -> None:
     """Background task: every few minutes, mark interviews nobody started as no-show."""
     while True:
         try:
-            await asyncio.to_thread(mark_no_shows)
+            for interview_id in await asyncio.to_thread(mark_no_shows):
+                await end_room(interview_id, "no_show")  # close the room if anyone is waiting in it
         except Exception:
             logger.exception("No-show check failed")
         await asyncio.sleep(settings.no_show_check_interval_minutes * 60)

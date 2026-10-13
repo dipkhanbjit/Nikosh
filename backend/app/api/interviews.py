@@ -25,6 +25,7 @@ from app.services.interviews import (
     validate_candidate,
 )
 from app.services.invitations import cancel_invitation, send_invitation
+from app.services.rooms import end_room, push_from_thread, rooms
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,7 @@ def cancel_interview(interview_id: int, body: CancelRequest, db: Session = Depen
     interview = _get_interview(db, interview_id)
     interview.cancel_reason = body.reason
     interview = change_status(db, interview, "cancelled")
+    push_from_thread(interview.id, end_room, "cancelled")
     cancel_invitation(db, interview)
     return _to_out(db, interview)
 
@@ -174,7 +176,9 @@ def mark_no_show(interview_id: int, db: Session = Depends(get_db)):
     interview = _get_interview(db, interview_id)
     if interview.scheduled_at > datetime.now(timezone.utc):
         raise AppException("Interview has not started yet", 409, "TOO_EARLY")
-    return _to_out(db, change_status(db, interview, "no_show"))
+    interview = change_status(db, interview, "no_show")
+    push_from_thread(interview.id, end_room, "no_show")
+    return _to_out(db, interview)
 
 
 @router.post("/{interview_id}/start", response_model=InterviewOut)
@@ -186,6 +190,8 @@ def start_interview(interview_id: int, db: Session = Depends(get_db)):
         raise AppException("The interview room is not open", 409, "ROOM_NOT_OPEN")
     if interview.status == "scheduled":
         interview = change_status(db, interview, "in_progress")
+        started = {"type": "interview-started", "started_at": interview.started_at.isoformat()}
+        push_from_thread(interview.id, rooms.broadcast, started)
     else:
         logger.info("Interview %s: interviewer rejoined the room", interview.id)
     return _to_out(db, interview)
@@ -200,4 +206,5 @@ def end_interview(interview_id: int, db: Session = Depends(get_db)):
     except AppException:
         logger.warning("Interview %s: end refused (%s)", interview.id, interview.status)
         raise
+    push_from_thread(interview.id, end_room, "completed")
     return _to_out(db, interview)

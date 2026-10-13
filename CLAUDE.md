@@ -55,6 +55,9 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
 - Whole system: `docker compose up -d --build` → frontend `localhost:3000`,
   backend `localhost:8000`. Rebuild after code changes.
 - Backend logs: `docker compose logs backend --tail 30`.
+- The backend runs Uvicorn with a **single worker** (no `--workers`): the
+  interview room registry (`app/services/rooms.py`) is in memory. Do not add
+  workers without moving it to a shared store.
 - The "volume nikosh_pgdata already exists" warning is harmless.
 - Same-PC testing: interviewer in a normal browser window, candidate in an
   incognito window or another browser (Edge). For video: Chrome + Edge,

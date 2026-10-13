@@ -5,9 +5,14 @@ import { getRoomInfo } from "../api/join";
 import DeviceCheck from "../components/room/DeviceCheck";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Spinner } from "../components/ui";
+import useRoomSocket from "../hooks/useRoomSocket";
 import { getUser } from "../utils/auth";
 
-const REFRESH_MS = 15000; // picks up the start time and the end of the interview
+const ENDED_MESSAGES = {
+  completed: "The interview has ended. Thank you for attending.",
+  cancelled: "This interview was cancelled.",
+  no_show: "The interview time has passed.",
+};
 
 function roomError(err) {
   if (err.status === 410) return "This interview has ended or the link is no longer valid.";
@@ -15,6 +20,14 @@ function roomError(err) {
   if (err.code === "NOT_YOUR_INTERVIEW") return "This interview belongs to another account.";
   if (err.status === 404) return "This interview link is not valid.";
   return "Could not open the interview room. Please try again.";
+}
+
+// The room socket was closed for good (not by an "interview-ended" message)
+function closedMessage({ code, reason }) {
+  if (code === 4000) return "The interview room was opened in another tab or window.";
+  if (code === 4410 || code === 1000) return ENDED_MESSAGES.completed;
+  if (code === 4409) return "The interview room is not open.";
+  return reason || "The connection to the interview room was closed.";
 }
 
 function Message({ token, children }) {
@@ -37,6 +50,17 @@ export default function CandidateRoom() {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
   const [stream, setStream] = useState(null);
+  const [endedReason, setEndedReason] = useState("");
+
+  const { peer, closed } = useRoomSocket(stream ? `/ws/join/${token}` : null, {
+    onEvent: (message) => {
+      if (message.type === "room-state" || message.type === "interview-started") {
+        setInfo((current) => ({ ...current, started_at: message.started_at, status: message.status || "in_progress" }));
+      } else if (message.type === "interview-ended") {
+        setEndedReason(message.reason || "completed");
+      }
+    },
+  });
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -45,24 +69,17 @@ export default function CandidateRoom() {
       .catch((err) => setError(roomError(err)));
   }, [token, loggedIn]);
 
-  // While in the room, refresh now and then (start time, interview ended)
-  useEffect(() => {
-    if (!stream) return undefined;
-    const timer = setInterval(() => {
-      getRoomInfo(token)
-        .then(setInfo)
-        .catch((err) => err.status === 410 && setError("The interview has ended. Thank you for attending."));
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [stream, token]);
-
   // The join page handles logging in and coming back
   if (!loggedIn) return <Navigate to={`/interview/join/${token}`} replace />;
 
-  if (error) {
+  const roomClosed = endedReason
+    ? ENDED_MESSAGES[endedReason] || ENDED_MESSAGES.completed
+    : closed && closedMessage(closed);
+
+  if (error || roomClosed) {
     return (
       <Message token={token}>
-        <Alert type={stream ? "info" : "error"}>{error}</Alert>
+        <Alert type={roomClosed ? "info" : "error"}>{error || roomClosed}</Alert>
       </Message>
     );
   }
@@ -96,6 +113,7 @@ export default function CandidateRoom() {
       candidateName={info.candidate_name}
       startedAt={info.started_at}
       waitingFor="the interviewer"
+      peerName={peer?.name}
       stream={stream}
       onLeave={() => navigate(`/interview/join/${token}`)}
     />

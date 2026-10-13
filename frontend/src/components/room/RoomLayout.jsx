@@ -36,6 +36,7 @@ export default function RoomLayout({
   candidateName,
   startedAt,
   waitingFor,
+  peerName,
   stream,
   onLeave,
   extraControls,
@@ -82,7 +83,9 @@ export default function RoomLayout({
       <div className="flex min-h-0 flex-1 gap-4 p-4">
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-gray-900">
-            <p className="text-sm text-gray-300">Waiting for {waitingFor} to join...</p>
+            <p className="text-sm text-gray-300">
+              {peerName ? `${peerName} has joined` : `Waiting for ${waitingFor} to join...`}
+            </p>
 
             <div className="absolute right-3 bottom-3 flex aspect-video w-48 items-center justify-center overflow-hidden rounded-md border border-gray-700 bg-gray-800 shadow-lg">
               <video

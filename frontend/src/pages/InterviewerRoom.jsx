@@ -6,6 +6,7 @@ import DeviceCheck from "../components/room/DeviceCheck";
 import InterviewerPanel from "../components/room/InterviewerPanel";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Button, Modal, Spinner } from "../components/ui";
+import useRoomSocket from "../hooks/useRoomSocket";
 
 function Message({ children }) {
   return (
@@ -39,16 +40,26 @@ export default function InterviewerRoom() {
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState("");
 
+  const { peer, closed } = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
+    // ended here, in another tab, or cancelled
+    onEvent: (message) => message.type === "interview-ended" && navigate("/interviews"),
+  });
+
   useEffect(() => {
     getInterview(id)
       .then(setInterview)
       .catch((err) => setError(err.message));
   }, [id]);
 
-  if (error) {
+  // The room socket was closed for good (another tab took over, or the room is no longer open)
+  let roomClosed = "";
+  if (closed?.code === 4000) roomClosed = "This interview room was opened in another tab or window.";
+  else if (closed) roomClosed = closed.reason || "The interview room was closed.";
+
+  if (error || roomClosed) {
     return (
       <Message>
-        <Alert type="error">{error}</Alert>
+        <Alert type={roomClosed ? "info" : "error"}>{error || roomClosed}</Alert>
       </Message>
     );
   }
@@ -109,6 +120,7 @@ export default function InterviewerRoom() {
         candidateName={interview.candidate_name}
         startedAt={interview.started_at}
         waitingFor={candidate}
+        peerName={peer?.name}
         stream={stream}
         onLeave={() => navigate("/interviews")}
         extraControls={
