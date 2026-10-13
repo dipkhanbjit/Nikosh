@@ -119,24 +119,33 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
     calendar_event_id, calendar_url, invitation_status, invitation_error,
     invitation_sent_at. Editable contact email in the schedule modal.
     Reschedule does not update invitations.
+  - 6.2.2 fix: one formal invitation email. Google Calendar
+    `sendUpdates="none"`; `.ics` REQUEST/CANCEL attachment with a stable UID
+    and `invitation_sequence`; `GOOGLE_ACCOUNT_EMAIL` setting; no password
+    in the calendar.
+- **Feature 6.3 done and merged** (Video Session):
+  - 6.3.1 Rooms: device check; interviewer room `/interviews/:id/room`,
+    candidate room `/interview/join/:token/room`; start/end endpoints;
+    `room_open` window helper.
+  - 6.3.2 WebSocket signaling: `/ws/interviews/{id}`, `/ws/join/{token}`;
+    in-memory room registry (single Uvicorn worker); close codes;
+    interview-started/ended events (incl. cancelled / no_show).
+  - 6.3.3 WebRTC peer-to-peer video/audio (`usePeerConnection`, Google STUN
+    via `VITE_ICE_SERVERS`), media-state, screen sharing.
+  - 6.3.4 End-to-end tests (single PC, and two PCs via Cloudflare quick
+    tunnel); README demo setup; `FRONTEND_BASE_URL`.
+  - Room layout: left = AI Assistant placeholder + Candidate tab (key
+    highlights, Open CV); centre = video, controls, transcript placeholder;
+    right = in-call chat (saved history, links, file sharing up to 10 MB:
+    txt/pdf/doc/xls/ppt). Chat files are deleted with the candidate/job.
 
 ## Module 6 plan — During-Interview: AI-Powered Video Interview (F3)
 - 6.1 Candidate Selection & Interview Scheduling — **done**
 - 6.2 Interview Invitation & Candidate Access — **done**
-- 6.3 Video Session (branch `feature/6.3-video-session`)
-  - 6.3.1 Initial interview room — **next**: interviewer room
-    `/interviews/:id/room`, candidate room from the join page; device check
-    (camera preview, camera + microphone selection, mic level); mute /
-    camera / leave, interviewer "End interview"; interviewer joining sets
-    in_progress, End sets completed; stop tracks on leave
-  - 6.3.2 Real-time connection handling (WebSocket signaling per session,
-    only the interviewer and the interview's own candidate)
-  - 6.3.3 Live video and audio (WebRTC peer-to-peer, free Google STUN)
-  - 6.3.4 End-to-end testing (email link → login → join → call → end;
-    same-PC, two-mic demo setup)
-- 6.4 Audio Capture: 6.4.1 per-participant mic audio tagged by role,
-  6.4.2 backend receives audio per speaker over WebSocket (STT connected in
-  Module 7)
+- 6.3 Video Session — **done**
+- 6.4 Audio Capture — **next** (branch `feature/6.4-audio-capture`):
+  6.4.1 per-participant mic audio tagged by role, 6.4.2 backend receives
+  audio per speaker over WebSocket (STT connected in Module 7)
 - 6.5 Connection Recovery: 6.5.1 auto-reconnect, 6.5.2 preserve session data
 - Goal: finish Module 6 on 13 Oct.
 
@@ -144,6 +153,16 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
 - Module 8 hiring decision: Selected / Not selected with an optional short
   message, emailed to the candidate and shown in "My interviews".
 - Candidates never see scores, transcripts or analysis.
+- 7.3.2 live transcript panel (interviewer only), chat style: interviewer
+  bubbles right (blue), candidate bubbles left (white); speaker name +
+  timestamp on each; interim text grey italic until final; auto-scroll
+  unless the user scrolled up.
+- F8 AI Assistant: plug the existing ChatPanel into the left "AI Assistant"
+  tab; RAG over company docs + candidate CV + job requirements (+ recent
+  transcript later); Gemini only on demand.
+- Two-PC testing: the tunnel URL changes every start; set
+  `FRONTEND_BASE_URL` and run `docker compose up -d backend` (not
+  `restart`); switch back to localhost afterwards.
 
 ## Trainer schedule ahead
 - 14 Oct F5 interview scheduling, agentic email/calendar tool, unique link (done)
