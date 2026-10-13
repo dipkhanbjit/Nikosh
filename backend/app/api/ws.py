@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 
 import jwt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -11,8 +12,10 @@ from app.core.security import decode_access_token
 from app.models import Interview, User
 from app.services.interview_chat import add_text, ensure_chat_open, to_dict
 from app.services.audio import BYTES_PER_SECOND, AudioConnection, audio
+from app.services.audio_recorder import AudioRecorder
 from app.services.interviews import check_join_link, room_open
 from app.services.rooms import Connection, rooms
+from app.services.transcription import TranscriptionStream
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +177,7 @@ async def candidate_socket(ws: WebSocket, token: str):
 # --- Audio capture (6.4.1): each browser sends only its own microphone as binary
 # LINEAR16 chunks (16 kHz mono). The speaker role comes from the login, never from the client.
 # Text frames (the client's ping while muted) only keep the connection alive.
+# 6.4.2: saved as WAV parts (audio_recorder) and fed to the transcriber hook (transcription).
 
 
 def _require_in_progress(info: dict) -> dict:
@@ -182,10 +186,20 @@ def _require_in_progress(info: dict) -> dict:
     return info
 
 
-async def _run_audio(ws: WebSocket, interview_id: int, role: str) -> None:
+async def _run_audio(ws: WebSocket, info: dict, role: str) -> None:
+    interview_id = info["interview_id"]
+    started_at = datetime.fromisoformat(info["started_at"]) if info["started_at"] else None
     conn = AudioConnection(ws, role)
     await audio.join(interview_id, conn)
     logger.info("Interview %s: %s audio connected", interview_id, role)
+    # 6.4.2: each connection is saved as its own WAV part and fed to the transcriber
+    recorder = AudioRecorder(interview_id, role)
+    try:
+        await recorder.open(started_at)
+    except Exception:
+        logger.exception("Interview %s: %s audio part could not be opened (not recorded)", interview_id, role)
+    transcriber = TranscriptionStream(interview_id, role)
+    await transcriber.start()
     try:
         while True:
             message = await asyncio.wait_for(ws.receive(), IDLE_TIMEOUT_SECONDS)
@@ -199,6 +213,8 @@ async def _run_audio(ws: WebSocket, interview_id: int, role: str) -> None:
                 await conn.close(CLOSE_TOO_LARGE, "Audio chunk too large")
                 break
             audio.add_chunk(interview_id, conn, len(chunk))
+            recorder.write(chunk)
+            transcriber.feed(chunk, recorder.offset_now())
     except asyncio.TimeoutError:
         logger.warning("Interview %s: %s audio connection timed out", interview_id, role)
         await conn.close(CLOSE_TIMEOUT, "Connection timed out")
@@ -206,6 +222,8 @@ async def _run_audio(ws: WebSocket, interview_id: int, role: str) -> None:
         pass  # closed by the client, or by us (replaced / interview ended)
     finally:
         await audio.leave(interview_id, conn)
+        await transcriber.stop()
+        await recorder.close()
         total = audio.total(interview_id, role)
         logger.info(
             "Interview %s: %s audio disconnected (%.1f s this connection, %.1f s total)",
@@ -226,7 +244,7 @@ async def interviewer_audio_socket(ws: WebSocket, interview_id: int):
         await _refuse(ws, refused)
         return
     await ws.accept()
-    await _run_audio(ws, interview_id, "interviewer")
+    await _run_audio(ws, info, "interviewer")
 
 
 @router.websocket("/audio/join/{token}")
@@ -240,4 +258,4 @@ async def candidate_audio_socket(ws: WebSocket, token: str):
         await _refuse(ws, refused)
         return
     await ws.accept()
-    await _run_audio(ws, info["interview_id"], "candidate")
+    await _run_audio(ws, info, "candidate")

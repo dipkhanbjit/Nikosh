@@ -1,6 +1,7 @@
 from app.models.candidate import Candidate
 from app.models.deleted_application import DeletedApplication
 from app.models.interview import Interview
+from app.models.interview_audio_part import InterviewAudioPart
 from app.models.interview_message import InterviewMessage
 from app.models.job import Job
 from app.models.knowledge import KBChunk, KBDocument
@@ -13,6 +14,7 @@ __all__ = [
     "Candidate",
     "DeletedApplication",
     "Interview",
+    "InterviewAudioPart",
     "InterviewMessage",
     "KBDocument",
     "KBChunk",
