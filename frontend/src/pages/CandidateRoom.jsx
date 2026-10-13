@@ -58,7 +58,7 @@ export default function CandidateRoom() {
   const [chatOpen, setChatOpen] = useState(false);
   const chat = useRoomChat(info?.interview_id, { ownRole: "candidate", open: chatOpen });
 
-  const { peer, closed, sendSignal, sendChat } = useRoomSocket(stream ? `/ws/join/${token}` : null, {
+  const room = useRoomSocket(stream ? `/ws/join/${token}` : null, {
     onSignal: (data) => call.handleSignal(data),
     onEvent: (message) => {
       call.handleEvent(message);
@@ -73,11 +73,12 @@ export default function CandidateRoom() {
   });
 
   // The call stops when the interview ends or the room is closed
+  const { peer, closed, sendSignal, sendChat } = room;
   const call = usePeerConnection({ role: "candidate", stream: endedReason || closed ? null : stream, sendSignal });
 
   // Own microphone to the backend while the interview is running (room-state / interview-started)
   const capturing = stream && info?.status === "in_progress" && !endedReason && !closed;
-  const { recording } = useAudioCapture({
+  const audio = useAudioCapture({
     path: capturing ? `/ws/audio/join/${token}` : null,
     track: stream?.getAudioTracks()[0] || null,
   });
@@ -142,7 +143,12 @@ export default function CandidateRoom() {
       sharing={call.sharing}
       onToggleShare={call.toggleShare}
       onLeave={() => navigate(`/interview/join/${token}`)}
-      recording={recording}
+      recording={audio.recording}
+      connection={{ online: room.online, connected: room.connected, peerReconnecting: room.peerReconnecting }}
+      onRetry={() => {
+        room.restart();
+        audio.restart();
+      }}
       recordingNotice="This interview is recorded for transcription."
       chat={{
         open: chatOpen,
@@ -156,6 +162,7 @@ export default function CandidateRoom() {
             loadError={chat.error}
             onSend={sendChat}
             onUploaded={chat.receive}
+            offline={!room.online || !room.connected}
             readOnly={Boolean(endedReason || closed)}
           />
         ),

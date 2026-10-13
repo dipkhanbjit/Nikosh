@@ -116,6 +116,7 @@ async def _run(ws: WebSocket, info: dict, role: str) -> None:
     await rooms.join(interview_id, conn, info["status"], info["started_at"])
     logger.info("Interview %s: %s connected to the room", interview_id, role)
     pinger = asyncio.create_task(_ping(conn))
+    unexpected = True  # only a normal close (1000, "Leave") tells the other side right away
     try:
         while True:
             text = await asyncio.wait_for(ws.receive_text(), IDLE_TIMEOUT_SECONDS)
@@ -135,11 +136,14 @@ async def _run(ws: WebSocket, info: dict, role: str) -> None:
     except asyncio.TimeoutError:
         logger.warning("Interview %s: %s connection timed out", interview_id, role)
         await conn.close(CLOSE_TIMEOUT, "Connection timed out")
-    except (WebSocketDisconnect, RuntimeError):
-        pass  # closed by the client, or by us (replaced / interview ended)
+    except WebSocketDisconnect as exc:
+        unexpected = exc.code != 1000
+        logger.info("Interview %s: %s room socket closed (code %s)", interview_id, role, exc.code)
+    except RuntimeError:
+        pass  # closed by us (replaced / interview ended); leave() ignores these
     finally:
         pinger.cancel()
-        await rooms.leave(interview_id, conn)
+        await rooms.leave(interview_id, conn, unexpected)
         logger.info("Interview %s: %s disconnected from the room", interview_id, role)
 
 
@@ -191,7 +195,11 @@ async def _run_audio(ws: WebSocket, info: dict, role: str) -> None:
     started_at = datetime.fromisoformat(info["started_at"]) if info["started_at"] else None
     conn = AudioConnection(ws, role)
     await audio.join(interview_id, conn)
-    logger.info("Interview %s: %s audio connected", interview_id, role)
+    connections = audio.total(interview_id, role).connections
+    if connections > 1:
+        logger.info("Interview %s: %s audio reconnected (connection %d)", interview_id, role, connections)
+    else:
+        logger.info("Interview %s: %s audio connected", interview_id, role)
     # 6.4.2: each connection is saved as its own WAV part and fed to the transcriber
     recorder = AudioRecorder(interview_id, role)
     try:

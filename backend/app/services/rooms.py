@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 # Close codes: 1000 normal, 4000 replaced by a newer connection (do not reconnect)
 CLOSE_REPLACED = 4000
 
+# After an unexpected drop the other side gets "peer-reconnecting"; "peer-left" only follows
+# if the participant has not rejoined within this time (6.5.1)
+GRACE_SECONDS = 30
+
 
 def other_role(role: str) -> str:
     return "candidate" if role == "interviewer" else "interviewer"
@@ -45,6 +49,7 @@ class RoomManager:
 
     def __init__(self) -> None:
         self._rooms: dict[int, dict[str, Connection]] = {}
+        self._grace: dict[tuple[int, str], asyncio.Task] = {}  # (interview_id, role) -> pending peer-left
         self._lock = asyncio.Lock()
 
     async def join(self, interview_id: int, conn: Connection, status: str, started_at: str | None) -> None:
@@ -55,7 +60,11 @@ class RoomManager:
             old = room.get(conn.role)
             room[conn.role] = conn
             peer = room.get(other_role(conn.role))
+            grace = self._grace.pop((interview_id, conn.role), None)
 
+        if grace:
+            grace.cancel()
+            logger.info("Interview %s: %s reconnected within the grace period", interview_id, conn.role)
         if old:
             logger.info("Interview %s: %s connection replaced by a new one", interview_id, conn.role)
             await old.close(CLOSE_REPLACED, "Replaced by a new connection")
@@ -64,8 +73,10 @@ class RoomManager:
         if peer:
             await peer.send({"type": "peer-joined", "role": conn.role, "name": conn.name})
 
-    async def leave(self, interview_id: int, conn: Connection) -> None:
-        """Remove the connection if it is still the current one and tell the other participant."""
+    async def leave(self, interview_id: int, conn: Connection, unexpected: bool = False) -> None:
+        """Remove the connection if it is still the current one and tell the other participant:
+        "peer-left" for a normal leave; "peer-reconnecting" for an unexpected drop, followed by
+        "peer-left" only if the participant has not rejoined within GRACE_SECONDS."""
         async with self._lock:
             room = self._rooms.get(interview_id)
             if not room or room.get(conn.role) is not conn:
@@ -74,8 +85,30 @@ class RoomManager:
             peer = room.get(other_role(conn.role))
             if not room:
                 del self._rooms[interview_id]
-        if peer:
+            if unexpected and peer:
+                key = (interview_id, conn.role)
+                old = self._grace.pop(key, None)
+                if old:
+                    old.cancel()
+                self._grace[key] = asyncio.create_task(self._expire_grace(interview_id, conn.role))
+        if not peer:
+            return
+        if unexpected:
+            logger.info("Interview %s: %s dropped, waiting %s s for a reconnect", interview_id, conn.role, GRACE_SECONDS)
+            await peer.send({"type": "peer-reconnecting", "role": conn.role})
+        else:
             await peer.send({"type": "peer-left", "role": conn.role})
+
+    async def _expire_grace(self, interview_id: int, role: str) -> None:
+        await asyncio.sleep(GRACE_SECONDS)
+        async with self._lock:
+            if self._grace.get((interview_id, role)) is not asyncio.current_task():
+                return  # rejoined or room closed meanwhile
+            del self._grace[(interview_id, role)]
+            peer = self._rooms.get(interview_id, {}).get(other_role(role))
+        logger.warning("Interview %s: %s did not reconnect within %s s", interview_id, role, GRACE_SECONDS)
+        if peer:
+            await peer.send({"type": "peer-left", "role": role})
 
     async def relay_signal(self, interview_id: int, from_role: str, data) -> None:
         """Forward a signal unchanged to the other participant of the same interview only."""
@@ -93,6 +126,9 @@ class RoomManager:
     async def close_room(self, interview_id: int, reason: str) -> None:
         async with self._lock:
             room = self._rooms.pop(interview_id, {})
+            graces = [self._grace.pop(key) for key in list(self._grace) if key[0] == interview_id]
+        for grace in graces:
+            grace.cancel()
         for conn in room.values():
             await conn.close(1000, reason)
         if room:

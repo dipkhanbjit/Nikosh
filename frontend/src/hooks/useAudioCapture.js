@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { isFinal, socketUrl } from "./useRoomSocket";
+import { CLOSE_RECONNECT, isFinal, socketUrl } from "./useRoomSocket";
 
 const RETRY_MS = 2000;
 const MAX_RETRY_MS = 10000;
@@ -32,9 +32,12 @@ function openAudioGraph(track) {
 //   path: "/ws/audio/interviews/<id>" or "/ws/audio/join/<token>"; null = not capturing
 //   track: the mic track used in the call (same track, so mute = nothing sent; screen sharing and
 //     camera changes only touch video tracks)
-// Returns { recording }: true while the audio socket is open.
+// Reconnects with backoff (each connection is a new part on the server); drops the socket at once
+// when the browser goes offline and reconnects as soon as it is back online.
+// Returns { recording, restart }: recording = the audio socket is open; restart() = start again ("Try again").
 export default function useAudioCapture({ path, track }) {
   const [recording, setRecording] = useState(false);
+  const [restartKey, setRestartKey] = useState(0);
 
   useEffect(() => {
     if (!path || !track) return undefined;
@@ -46,13 +49,15 @@ export default function useAudioCapture({ path, track }) {
     let node = null;
 
     const connect = () => {
+      clearTimeout(retryTimer);
+      if (attempts) log("audio reconnecting, attempt", attempts);
       const ws = new WebSocket(socketUrl(path));
       ws.binaryType = "arraybuffer";
       socket = ws;
       ws.onopen = () => {
+        log(attempts ? "audio socket reconnected" : "audio socket connected");
         attempts = 0;
         setRecording(true);
-        log("audio socket connected");
       };
       ws.onclose = (event) => {
         if (socket === ws) socket = null;
@@ -63,9 +68,30 @@ export default function useAudioCapture({ path, track }) {
           return;
         }
         attempts += 1;
+        if (!navigator.onLine) return; // "online" reconnects
         retryTimer = setTimeout(connect, Math.min(RETRY_MS * attempts, MAX_RETRY_MS));
       };
     };
+
+    // Offline: drop the socket now; online: reconnect now (once the capture graph is ready)
+    const goOffline = () => {
+      clearTimeout(retryTimer);
+      if (!socket) return;
+      const ws = socket;
+      socket = null;
+      ws.onclose = null;
+      ws.close(CLOSE_RECONNECT, "Offline");
+      setRecording(false);
+      attempts = Math.max(attempts, 1);
+      log("audio socket dropped (offline)");
+    };
+    const goOnline = () => {
+      if (stopped || socket || !node) return;
+      attempts = Math.max(attempts, 1);
+      connect();
+    };
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
 
     const start = async () => {
       try {
@@ -95,6 +121,8 @@ export default function useAudioCapture({ path, track }) {
       stopped = true;
       clearTimeout(retryTimer);
       clearInterval(ping);
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
       socket?.close(1000, "Left the room");
       socket = null;
       if (node) node.port.onmessage = null;
@@ -110,7 +138,9 @@ export default function useAudioCapture({ path, track }) {
       window.removeEventListener("pagehide", stop);
       stop(); // the track itself belongs to the room (RoomLayout stops it)
     };
-  }, [path, track]);
+  }, [path, track, restartKey]);
 
-  return { recording };
+  const restart = useCallback(() => setRestartKey((key) => key + 1), []);
+
+  return { recording, restart };
 }

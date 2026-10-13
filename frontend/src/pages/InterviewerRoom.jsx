@@ -51,7 +51,7 @@ export default function InterviewerRoom() {
   const [chatOpen, setChatOpen] = useState(false);
   const chat = useRoomChat(id, { ownRole: "interviewer", open: chatOpen });
 
-  const { peer, closed, sendSignal, sendChat } = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
+  const room = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
     onSignal: (data) => call.handleSignal(data),
     onEvent: (message) => {
       call.handleEvent(message);
@@ -63,11 +63,12 @@ export default function InterviewerRoom() {
   });
 
   // The call stops when the room is closed
+  const { peer, closed, sendSignal, sendChat } = room;
   const call = usePeerConnection({ role: "interviewer", stream: closed ? null : stream, sendSignal });
 
   // Own microphone to the backend while the interview is running (joining starts it)
   const capturing = stream && interview?.status === "in_progress" && !closed;
-  const { recording } = useAudioCapture({
+  const audio = useAudioCapture({
     path: capturing ? `/ws/audio/interviews/${id}` : null,
     track: stream?.getAudioTracks()[0] || null,
   });
@@ -156,7 +157,12 @@ export default function InterviewerRoom() {
         sharing={call.sharing}
         onToggleShare={call.toggleShare}
         onLeave={() => navigate("/interviews")}
-        recording={recording}
+        recording={audio.recording}
+        connection={{ online: room.online, connected: room.connected, peerReconnecting: room.peerReconnecting }}
+        onRetry={() => {
+          room.restart();
+          audio.restart();
+        }}
         endControl={
           <Button variant="danger" onClick={() => setConfirmEnd(true)} className="h-11 rounded-full px-5">
             End interview
@@ -175,6 +181,7 @@ export default function InterviewerRoom() {
               loadError={chat.error}
               onSend={sendChat}
               onUploaded={chat.receive}
+              offline={!room.online || !room.connected}
               readOnly={!interview.room_open || Boolean(closed)}
             />
           ),
