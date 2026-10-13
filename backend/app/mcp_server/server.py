@@ -116,11 +116,12 @@ def trash_drive_file(file_id: str) -> str:
 
 
 @mcp.tool()
-def send_email(to: str, subject: str, html: str) -> str:
+def send_email(to: str, subject: str, html: str, text: str = "", ics: str = "", ics_method: str = "") -> str:
     """Send an HTML email (e.g. an interview invitation) from the company Gmail account.
-    Returns the Gmail message id."""
+    Optional: text = plain-text fallback body; ics = calendar invite text attached as
+    invite.ics, with ics_method REQUEST or CANCEL. Returns the Gmail message id."""
     try:
-        message_id = send_mail(to, subject, html)
+        message_id = send_mail(to, subject, html, text, ics, ics_method)
     except Exception as exc:  # body is never logged: it may contain a password
         logger.error("Email '%s' to %s failed: %s", subject, to, exc)
         raise
@@ -129,11 +130,14 @@ def send_email(to: str, subject: str, html: str) -> str:
 
 
 @mcp.tool()
-def create_calendar_event(summary: str, description: str, start: str, end: str, attendee_email: str) -> str:
-    """Create a Google Calendar event (Asia/Dhaka) and invite the attendee by email.
-    start/end are ISO 8601 date-times. Returns JSON {event_id, html_link}."""
+def create_calendar_event(
+    summary: str, description: str, start: str, end: str, attendee_email: str, uid: str = ""
+) -> str:
+    """Create a Google Calendar event (Asia/Dhaka) with the attendee as a guest. Google sends
+    no email. start/end are ISO 8601 date-times; uid is an optional iCalUID.
+    Returns JSON {event_id, html_link}."""
     try:
-        event = create_event(summary, description, start, end, attendee_email)
+        event = create_event(summary, description, start, end, attendee_email, uid)
     except Exception as exc:
         logger.error("Calendar event '%s' for %s failed: %s", summary, attendee_email, exc)
         raise
@@ -143,7 +147,7 @@ def create_calendar_event(summary: str, description: str, start: str, end: str, 
 
 @mcp.tool()
 def delete_calendar_event(event_id: str) -> str:
-    """Delete a Google Calendar event and notify its attendees. Returns 'deleted' or 'not_found'."""
+    """Delete a Google Calendar event without emailing attendees. Returns 'deleted' or 'not_found'."""
     try:
         found = delete_event(event_id)
     except Exception as exc:

@@ -1,5 +1,7 @@
 import base64
 import logging
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from googleapiclient.errors import HttpError
@@ -13,9 +15,36 @@ class MailError(Exception):
     pass
 
 
-def send_email(to: str, subject: str, html: str) -> str:
-    """Send an HTML email from the authorized Google account. Returns the Gmail message id."""
-    message = MIMEText(html, "html", "utf-8")
+def _build_message(html: str, text: str, ics: str, ics_method: str) -> MIMEBase:
+    """HTML only (old behaviour), or text + HTML, plus an optional calendar invite.
+    The invite goes both inside the alternative part (so Gmail / Outlook show the
+    invite card) and as an invite.ics attachment (the way Google Calendar sends it)."""
+    if not text and not ics:
+        return MIMEText(html, "html", "utf-8")
+
+    body = MIMEMultipart("alternative")
+    if text:
+        body.attach(MIMEText(text, "plain", "utf-8"))
+    body.attach(MIMEText(html, "html", "utf-8"))
+    if not ics:
+        return body
+
+    method = ics_method.upper() or "REQUEST"
+    body.attach(MIMEText(ics, f"calendar; method={method}", "utf-8"))
+    attachment = MIMEText(ics, "calendar", "utf-8")
+    attachment.set_param("method", method)
+    attachment.add_header("Content-Disposition", "attachment", filename="invite.ics")
+
+    message = MIMEMultipart("mixed")
+    message.attach(body)
+    message.attach(attachment)
+    return message
+
+
+def send_email(to: str, subject: str, html: str, text: str = "", ics: str = "", ics_method: str = "") -> str:
+    """Send an HTML email from the authorized Google account, optionally with a plain-text
+    part and a calendar invite (ics text, method REQUEST or CANCEL). Returns the Gmail message id."""
+    message = _build_message(html, text, ics, ics_method)
     message["to"] = to
     message["subject"] = subject
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
