@@ -161,7 +161,8 @@ function RequirementMatch({ screening }) {
   );
 }
 
-function ProfileView({ profile }) {
+// Also used in the interview room CV panel
+export function ProfileView({ profile }) {
   return (
     <div className="flex flex-col gap-5 text-sm">
       {profile.summary && <p className="leading-relaxed text-gray-700">{profile.summary}</p>}

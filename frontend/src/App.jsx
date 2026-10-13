@@ -3,8 +3,10 @@ import { Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./layouts/AppLayout";
 import CandidateHome from "./pages/CandidateHome";
+import CandidateRoom from "./pages/CandidateRoom";
 import Candidates from "./pages/Candidates";
 import Dashboard from "./pages/Dashboard";
+import InterviewerRoom from "./pages/InterviewerRoom";
 import InterviewJoin from "./pages/InterviewJoin";
 import Interviews from "./pages/Interviews";
 import Jobs from "./pages/Jobs";
@@ -20,6 +22,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/interview/join/:token" element={<InterviewJoin />} />
+      <Route path="/interview/join/:token/room" element={<CandidateRoom />} />
 
       <Route element={<ProtectedRoute role="interviewer" />}>
         <Route element={<AppLayout />}>
@@ -32,6 +35,8 @@ export default function App() {
           <Route path="interviews" element={<Interviews />} />
           <Route path="reports" element={<Reports />} />
         </Route>
+        {/* full screen, outside the app layout */}
+        <Route path="interviews/:id/room" element={<InterviewerRoom />} />
       </Route>
 
       <Route element={<ProtectedRoute role="candidate" />}>

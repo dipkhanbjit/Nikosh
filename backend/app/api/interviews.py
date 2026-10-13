@@ -21,6 +21,7 @@ from app.services.interviews import (
     ensure_candidate_account,
     ensure_future,
     join_url,
+    room_open,
     validate_candidate,
 )
 from app.services.invitations import cancel_invitation, send_invitation
@@ -64,6 +65,7 @@ def _to_out(db: Session, interview: Interview) -> InterviewOut:
         ended_at=interview.ended_at,
         cancel_reason=interview.cancel_reason,
         join_url=join_url(interview),
+        room_open=room_open(interview),
         calendar_url=interview.calendar_url,
         invitation_status=interview.invitation_status,
         invitation_error=interview.invitation_error,
@@ -173,3 +175,29 @@ def mark_no_show(interview_id: int, db: Session = Depends(get_db)):
     if interview.scheduled_at > datetime.now(timezone.utc):
         raise AppException("Interview has not started yet", 409, "TOO_EARLY")
     return _to_out(db, change_status(db, interview, "no_show"))
+
+
+@router.post("/{interview_id}/start", response_model=InterviewOut)
+def start_interview(interview_id: int, db: Session = Depends(get_db)):
+    """The interviewer joins the room: scheduled → in_progress. Rejoining a running interview is allowed."""
+    interview = _get_interview(db, interview_id)
+    if not room_open(interview):
+        logger.warning("Interview %s: start refused (%s, room not open)", interview.id, interview.status)
+        raise AppException("The interview room is not open", 409, "ROOM_NOT_OPEN")
+    if interview.status == "scheduled":
+        interview = change_status(db, interview, "in_progress")
+    else:
+        logger.info("Interview %s: interviewer rejoined the room", interview.id)
+    return _to_out(db, interview)
+
+
+@router.post("/{interview_id}/end", response_model=InterviewOut)
+def end_interview(interview_id: int, db: Session = Depends(get_db)):
+    """The interviewer ends the interview: in_progress → completed."""
+    interview = _get_interview(db, interview_id)
+    try:
+        interview = change_status(db, interview, "completed")
+    except AppException:
+        logger.warning("Interview %s: end refused (%s)", interview.id, interview.status)
+        raise
+    return _to_out(db, interview)

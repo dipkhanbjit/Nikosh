@@ -42,6 +42,10 @@ export const scheduleInterview = (jobId, body) =>
   apiRequest(`/jobs/${jobId}/interviews`, { method: "POST", body });
 export const cancelInterview = (id, reason) =>
   apiRequest(`/interviews/${id}/cancel`, { method: "POST", body: { reason } });
+export const getInterview = (id) => apiRequest(`/interviews/${id}`);
+// Interviewer joins the room (scheduled → in_progress) / ends the interview (→ completed)
+export const startInterview = (id) => apiRequest(`/interviews/${id}/start`, { method: "POST" });
+export const endInterview = (id) => apiRequest(`/interviews/${id}/end`, { method: "POST" });
 export const markNoShow = (id) => apiRequest(`/interviews/${id}/no-show`, { method: "POST" });
 // New password + email again; retries the calendar event if it failed
 export const resendInvitation = (id) => apiRequest(`/interviews/${id}/resend-invitation`, { method: "POST" });

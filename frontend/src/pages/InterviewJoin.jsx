@@ -113,9 +113,8 @@ export default function InterviewJoin() {
                 ) : (
                   <div className="flex flex-col items-center gap-3 rounded-md border border-green-200 bg-green-50 p-4 text-center">
                     <Badge color="green">Ready</Badge>
-                    <p className="text-sm text-green-800">
-                      Your interview room is open. The video room will appear here.
-                    </p>
+                    <p className="text-sm text-green-800">Your interview room is open.</p>
+                    <Button onClick={() => navigate(`/interview/join/${token}/room`)}>Enter interview room</Button>
                   </div>
                 )}
               </div>

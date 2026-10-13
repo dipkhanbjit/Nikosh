@@ -24,3 +24,12 @@ class MyInterview(BaseModel):
     duration_minutes: int
     status: str
     join_url: str
+
+
+class RoomInfo(BaseModel):
+    """What the candidate's interview room shows. No internal IDs, CV or scores."""
+
+    job_title: str
+    candidate_name: str | None
+    status: str
+    started_at: datetime | None

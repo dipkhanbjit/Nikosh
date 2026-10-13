@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 PASSWORD_LENGTH = 10
 PASSWORD_CHARS = string.ascii_letters + string.digits
 
+# The interview room (and join link) opens this long before the start time
+OPEN_BEFORE = timedelta(minutes=10)
+
 # Allowed status changes: scheduled → in_progress → completed, or scheduled → cancelled / no_show
 TRANSITIONS = {
     "scheduled": {"in_progress", "cancelled", "no_show"},
@@ -41,6 +44,23 @@ def change_status(db: Session, interview: Interview, new_status: str) -> Intervi
     db.refresh(interview)
     logger.info("Interview %s: %s → %s", interview.id, old_status, new_status)
     return interview
+
+
+def opens_at(interview: Interview) -> datetime:
+    return interview.scheduled_at - OPEN_BEFORE
+
+
+def closes_at(interview: Interview) -> datetime:
+    return interview.scheduled_at + timedelta(minutes=interview.duration_minutes)
+
+
+def room_open(interview: Interview) -> bool:
+    """The room can be entered from 10 min before the start until the end; a running interview always."""
+    if interview.status == "in_progress":
+        return True
+    if interview.status != "scheduled":
+        return False
+    return opens_at(interview) <= datetime.now(timezone.utc) <= closes_at(interview)
 
 
 def join_url(interview: Interview) -> str:
