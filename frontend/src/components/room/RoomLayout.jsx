@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import useConnectionStatus from "../../hooks/useConnectionStatus";
 import { stopStream } from "../../utils/media";
 import {
   CameraIcon,
@@ -41,8 +42,8 @@ function ElapsedTimer({ startedAt }) {
 
 const CONNECTION_BADGES = {
   connected: { label: "Connected", dot: "bg-green-400" },
-  disconnected: { label: "Connection lost", dot: "bg-red-400" },
-  failed: { label: "Connection lost", dot: "bg-red-400" },
+  disconnected: { label: "Reconnecting...", dot: "bg-amber-400" },
+  failed: { label: "Reconnecting...", dot: "bg-amber-400" },
 };
 const CONNECTING_BADGE = { label: "Connecting...", dot: "bg-amber-400" };
 const WAITING_BADGE = { label: "Waiting", dot: "bg-gray-400" };
@@ -84,6 +85,29 @@ function ControlButton({ label, onClick, tone = "default", disabled, badge, chil
   );
 }
 
+// Banner over the video while a connection problem lasts (useConnectionStatus)
+function ConnectionBanner({ status, peerName, onRetry }) {
+  if (!status) return null;
+  let text = "Reconnecting...";
+  if (status === "peer") text = `${peerName || "The other participant"}'s connection was lost, waiting for them to reconnect...`;
+  if (status === "lost") text = "Connection lost";
+  return (
+    <div className="absolute top-3 left-1/2 z-10 flex max-w-[90%] -translate-x-1/2 items-center gap-3 rounded-lg bg-gray-950/85 px-4 py-2.5 text-sm text-white shadow-lg ring-1 ring-white/10">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${status === "lost" ? "bg-red-400" : "animate-pulse bg-amber-400"}`} />
+      <span>{text}</span>
+      {status === "lost" && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-md bg-white px-3 py-1 text-xs font-semibold text-gray-900 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        >
+          Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Light side panel; stays mounted when closed so its content (CV, chat draft) is kept
 function SidePanel({ title, open, onClose, children }) {
   return (
@@ -118,6 +142,8 @@ function SidePanel({ title, open, onClose, children }) {
 // leftPanel = { title, content } (interviewer only); chat = { open, onToggle, unread, content };
 // endControl = interviewer "End interview" button.
 // recording: own audio is being sent (useAudioCapture); recordingNotice: line shown to the candidate.
+// connection = { online, connected, peerReconnecting } from useRoomSocket (drop banners, 6.5.1);
+// onRetry(): "Try again" after a long drop (restart the sockets and the call).
 export default function RoomLayout({
   jobTitle,
   candidateName,
@@ -138,6 +164,8 @@ export default function RoomLayout({
   bottomPanel,
   recording,
   recordingNotice,
+  connection,
+  onRetry,
 }) {
   const selfRef = useRef(null);
   const remoteRef = useRef(null);
@@ -145,6 +173,7 @@ export default function RoomLayout({
   const [cameraOn, setCameraOn] = useState(true);
   const [leftOpen, setLeftOpen] = useState(true);
   const hasVideo = Boolean(stream?.getVideoTracks().length);
+  const { status: connectionStatus, retry } = useConnectionStatus({ ...connection, connectionState });
 
   useEffect(() => {
     if (selfRef.current) selfRef.current.srcObject = stream;
@@ -220,7 +249,7 @@ export default function RoomLayout({
                 <span className="flex h-20 w-20 items-center justify-center rounded-full bg-indigo-600 text-2xl font-semibold text-white">
                   {peerName ? initials(peerName) : "…"}
                 </span>
-                <p className="text-sm text-gray-300">
+                <p className={`text-sm text-gray-300 ${connectionStatus ? "invisible" : ""}`}>
                   {connected
                     ? `${otherName}: camera off`
                     : peerName
@@ -229,7 +258,15 @@ export default function RoomLayout({
                 </p>
               </div>
             )}
-            {remoteSharing && (
+            <ConnectionBanner
+              status={connectionStatus}
+              peerName={peerName}
+              onRetry={() => {
+                retry();
+                onRetry?.();
+              }}
+            />
+            {remoteSharing && !connectionStatus && (
               <span className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md bg-indigo-600/90 px-2.5 py-1 text-xs font-medium text-white">
                 {otherName} is sharing their screen
               </span>

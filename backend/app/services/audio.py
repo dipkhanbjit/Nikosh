@@ -29,6 +29,7 @@ class AudioConnection:
 @dataclass
 class SpeakerTotal:
     bytes: int = 0
+    connections: int = 0  # > 1 = the speaker reconnected
 
     @property
     def seconds(self) -> float:
@@ -55,7 +56,7 @@ class AudioManager:
             session = self._sessions.setdefault(interview_id, AudioSession())
             old = session.conns.get(conn.role)
             session.conns[conn.role] = conn
-            session.totals.setdefault(conn.role, SpeakerTotal())
+            session.totals.setdefault(conn.role, SpeakerTotal()).connections += 1
         if old:
             logger.info("Interview %s: %s audio connection replaced by a new one", interview_id, conn.role)
             await old.close(CLOSE_REPLACED, "Replaced by a new connection")
