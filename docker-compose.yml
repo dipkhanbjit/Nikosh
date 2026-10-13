@@ -33,7 +33,10 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_ICE_SERVERS: ${VITE_ICE_SERVERS:-}
     ports:
       - "3000:80"
     volumes:

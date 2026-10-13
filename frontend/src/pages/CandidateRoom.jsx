@@ -5,6 +5,7 @@ import { getRoomInfo } from "../api/join";
 import DeviceCheck from "../components/room/DeviceCheck";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Spinner } from "../components/ui";
+import usePeerConnection from "../hooks/usePeerConnection";
 import useRoomSocket from "../hooks/useRoomSocket";
 import { getUser } from "../utils/auth";
 
@@ -52,8 +53,10 @@ export default function CandidateRoom() {
   const [stream, setStream] = useState(null);
   const [endedReason, setEndedReason] = useState("");
 
-  const { peer, closed } = useRoomSocket(stream ? `/ws/join/${token}` : null, {
+  const { peer, closed, sendSignal } = useRoomSocket(stream ? `/ws/join/${token}` : null, {
+    onSignal: (data) => call.handleSignal(data),
     onEvent: (message) => {
+      call.handleEvent(message);
       if (message.type === "room-state" || message.type === "interview-started") {
         setInfo((current) => ({ ...current, started_at: message.started_at, status: message.status || "in_progress" }));
       } else if (message.type === "interview-ended") {
@@ -61,6 +64,9 @@ export default function CandidateRoom() {
       }
     },
   });
+
+  // The call stops when the interview ends or the room is closed
+  const call = usePeerConnection({ role: "candidate", stream: endedReason || closed ? null : stream, sendSignal });
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -115,6 +121,12 @@ export default function CandidateRoom() {
       waitingFor="the interviewer"
       peerName={peer?.name}
       stream={stream}
+      remoteStream={call.remoteStream}
+      connectionState={call.connectionState}
+      remoteMedia={call.remoteMedia}
+      onMediaChange={call.sendMediaState}
+      sharing={call.sharing}
+      onToggleShare={call.toggleShare}
       onLeave={() => navigate(`/interview/join/${token}`)}
     />
   );

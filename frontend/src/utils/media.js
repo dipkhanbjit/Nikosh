@@ -26,6 +26,28 @@ export function stopStream(stream) {
 // A saved id is only preferred, so a missing device falls back to the default one
 const constraint = (deviceId) => (deviceId ? { deviceId } : true);
 
+// Echo cancellation / noise suppression stay on (needed for same-PC tests and later transcription)
+const audioConstraint = (deviceId) => ({
+  ...(deviceId ? { deviceId } : {}),
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+});
+
+// ICE servers for WebRTC. VITE_ICE_SERVERS (JSON array, set at build time) can add a TURN server;
+// the default is the free Google STUN server.
+const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+
+export function iceServers() {
+  try {
+    const servers = JSON.parse(import.meta.env.VITE_ICE_SERVERS || "null");
+    if (Array.isArray(servers) && servers.length) return servers;
+  } catch {
+    console.warn("VITE_ICE_SERVERS is not valid JSON; using the default STUN server");
+  }
+  return DEFAULT_ICE_SERVERS;
+}
+
 // Opens camera + microphone. If only the camera fails (missing or in use by the other
 // browser in a same-PC test), continues with the microphone and returns a warning.
 export async function openMedia({ cameraId, micId } = {}) {
@@ -35,13 +57,13 @@ export async function openMedia({ cameraId, micId } = {}) {
     throw err;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: constraint(cameraId), audio: constraint(micId) });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: constraint(cameraId), audio: audioConstraint(micId) });
     return { stream, warning: "" };
   } catch (err) {
     if (err.name === "NotAllowedError" || err.name === "SecurityError") throw err;
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: constraint(micId) });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint(micId) });
     } catch (micErr) {
       micErr.device = "microphone";
       throw micErr;

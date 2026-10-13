@@ -6,6 +6,7 @@ import DeviceCheck from "../components/room/DeviceCheck";
 import InterviewerPanel from "../components/room/InterviewerPanel";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Button, Modal, Spinner } from "../components/ui";
+import usePeerConnection from "../hooks/usePeerConnection";
 import useRoomSocket from "../hooks/useRoomSocket";
 
 function Message({ children }) {
@@ -40,10 +41,17 @@ export default function InterviewerRoom() {
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState("");
 
-  const { peer, closed } = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
-    // ended here, in another tab, or cancelled
-    onEvent: (message) => message.type === "interview-ended" && navigate("/interviews"),
+  const { peer, closed, sendSignal } = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
+    onSignal: (data) => call.handleSignal(data),
+    onEvent: (message) => {
+      call.handleEvent(message);
+      // ended here, in another tab, or cancelled
+      if (message.type === "interview-ended") navigate("/interviews");
+    },
   });
+
+  // The call stops when the room is closed
+  const call = usePeerConnection({ role: "interviewer", stream: closed ? null : stream, sendSignal });
 
   useEffect(() => {
     getInterview(id)
@@ -122,6 +130,12 @@ export default function InterviewerRoom() {
         waitingFor={candidate}
         peerName={peer?.name}
         stream={stream}
+        remoteStream={call.remoteStream}
+        connectionState={call.connectionState}
+        remoteMedia={call.remoteMedia}
+        onMediaChange={call.sendMediaState}
+        sharing={call.sharing}
+        onToggleShare={call.toggleShare}
         onLeave={() => navigate("/interviews")}
         extraControls={
           <Button variant="danger" onClick={() => setConfirmEnd(true)}>
