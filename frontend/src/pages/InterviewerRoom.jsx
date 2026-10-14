@@ -9,6 +9,7 @@ import RoomChat from "../components/room/RoomChat";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Button, Modal, Spinner } from "../components/ui";
 import useAudioCapture from "../hooks/useAudioCapture";
+import useLiveTranscript from "../hooks/useLiveTranscript";
 import usePeerConnection from "../hooks/usePeerConnection";
 import useRoomChat from "../hooks/useRoomChat";
 import useRoomSocket from "../hooks/useRoomSocket";
@@ -50,12 +51,14 @@ export default function InterviewerRoom() {
   const [endError, setEndError] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const chat = useRoomChat(id, { ownRole: "interviewer", open: chatOpen });
+  const transcript = useLiveTranscript(); // 7.3.2 shows it in the transcript panel
 
   const room = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
     onSignal: (data) => call.handleSignal(data),
     onEvent: (message) => {
       call.handleEvent(message);
       if (message.type === "chat") chat.receive(message.message);
+      else if (message.type.startsWith("transcript-")) transcript.receive(message);
       else if (message.type === "room-state") chat.reload(); // catch up after a reconnect
       // ended here, in another tab, or cancelled
       if (message.type === "interview-ended") navigate("/interviews");

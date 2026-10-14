@@ -122,6 +122,7 @@ class TranscriptionStream:
         self.turns.streams += 1
         try:
             await self.engine.start(self.interview_id, self.role, self._on_event)
+            await self._set_status("stub" if isinstance(self.engine, StubTranscriber) else "active")
         except Exception as exc:
             logger.warning(
                 "Interview %s: %s transcriber could not start for %s (%s: %s), using the stub",
@@ -139,11 +140,19 @@ class TranscriptionStream:
             "Interview %s: transcriber %s started for %s", self.interview_id, type(self.engine).__name__, self.role
         )
 
+    async def _set_status(self, state: str) -> None:
+        """Kept in the TurnBuilder for the snapshot and sent to the interviewer (7.3.1)."""
+        logger.info("Interview %s: %s transcription is %s", self.interview_id, self.role, state)
+        try:
+            await self.turns.set_status(self.role, state)
+        except Exception:
+            logger.exception("Interview %s: transcript status update failed", self.interview_id)
+
     async def _on_event(self, event: TranscriptEvent | TranscriptStatus) -> None:
-        """Results go to the interview's TurnBuilder; 7.3 sends the status to the interviewer.
+        """Results go to the interview's TurnBuilder, which sends them to the interviewer.
         The text itself is logged only with TRANSCRIPT_LOG_TEXT=true."""
         if isinstance(event, TranscriptStatus):
-            logger.info("Interview %s: %s transcription is %s", self.interview_id, self.role, event.state)
+            await self._set_status(event.state)
             return
         try:
             await self.turns.add(event)
@@ -218,6 +227,7 @@ class TranscriptionStream:
             await self.turns.speaker_stopped(self.role)
         except Exception:
             logger.exception("Interview %s: %s transcript turn could not be closed", self.interview_id, self.role)
+        await self._set_status("off")
         self.turns.streams -= 1
         logger.info(
             "Interview %s: transcriber stopped for %s (%d final, %d interim results, %d chunks dropped)",

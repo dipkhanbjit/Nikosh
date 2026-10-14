@@ -14,6 +14,7 @@ from app.services.interview_chat import add_text, ensure_chat_open, to_dict
 from app.services.audio import BYTES_PER_SECOND, AudioConnection, audio
 from app.services.audio_recorder import AudioRecorder
 from app.services.interviews import check_join_link, room_open
+from app.services.live_transcript import send_snapshot
 from app.services.rooms import Connection, rooms
 from app.services.transcription import TranscriptionStream
 
@@ -115,6 +116,11 @@ async def _run(ws: WebSocket, info: dict, role: str) -> None:
     conn = Connection(ws, role, info["name"])
     await rooms.join(interview_id, conn, info["status"], info["started_at"])
     logger.info("Interview %s: %s connected to the room", interview_id, role)
+    if role == "interviewer":  # live transcript (7.3.1): never sent to the candidate
+        try:
+            await send_snapshot(interview_id)
+        except Exception:
+            logger.exception("Interview %s: transcript snapshot could not be sent", interview_id)
     pinger = asyncio.create_task(_ping(conn))
     unexpected = True  # only a normal close (1000, "Leave") tells the other side right away
     try:
