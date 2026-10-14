@@ -39,8 +39,8 @@ def _summary(job: Job) -> str:
 
 
 def _ics(interview: Interview, job: Job, method: str) -> str:
-    """Calendar invite / cancellation. Description is the join link only, never the password.
-    Empty if the organizer address is not configured."""
+    """Calendar invite / cancellation. Description is the join link (plus the recording notice
+    on an invite), never the password. Empty if the organizer address is not configured."""
     if not settings.google_account_email:
         logger.warning("GOOGLE_ACCOUNT_EMAIL is not set: sending without a calendar invite")
         return ""
@@ -52,7 +52,7 @@ def _ics(interview: Interview, job: Job, method: str) -> str:
         start=start,
         end=start + timedelta(minutes=interview.duration_minutes),
         summary=_summary(job),
-        description=join_url(interview),
+        description=join_url(interview) + (f"\n\n{RECORDING_NOTICE}" if method == "REQUEST" else ""),
         organizer_email=settings.google_account_email,
         organizer_name=settings.company_name,
         attendee_email=interview.candidate.email,
@@ -118,6 +118,9 @@ BEFORE_INTERVIEW = [
     "Join from a quiet place with a working camera and microphone, using Chrome or Edge.",
     "A calendar invitation is attached to this email.",
 ]
+RECORDING_NOTICE = ("Please note that the audio of this interview will be recorded and transcribed "
+                    "for evaluation and record-keeping purposes. The recording will be kept "
+                    "confidential and used only for this recruitment process.")
 PERSONAL_NOTE = ("These login details are personal. Please do not share them. "
                  "If you need to reschedule, please reply to this email.")
 
@@ -146,6 +149,7 @@ We are pleased to invite you to an online video interview.</p>
 your browser:<br><a href="{link}" style="color:{BRAND_COLOR};word-break:break-all;">{link}</a></p>
 {_heading("Before the interview")}
 <ul style="margin:0;padding-left:20px;">{tips}</ul>
+<p style="margin:16px 0 0;">{escape(RECORDING_NOTICE)}</p>
 <p style="margin:16px 0 0;">{escape(PERSONAL_NOTE)}</p>
 <p style="margin:16px 0 0;">We look forward to speaking with you.</p>
 """)
@@ -169,6 +173,8 @@ Join Interview:
 
 Before the interview
 {tips}
+
+{RECORDING_NOTICE}
 
 {PERSONAL_NOTE}
 
