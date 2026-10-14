@@ -43,8 +43,12 @@ class Settings(BaseSettings):
     interview_files_dir: str = "storage/interview_files"
     chat_max_file_mb: int = 10
     interview_audio_dir: str = "storage/interview_audio"
-    # Speech-to-text for interview audio: "stub" (logs only); Module 7 adds real engines
+    # Speech-to-text for interview audio: "deepgram" or "stub" (logs only)
     transcriber: str = "stub"
+    deepgram_api_key: str = ""
+    deepgram_model: str = "nova-3"
+    # Log transcript text (testing only); otherwise only counts, timing and length are logged
+    transcript_log_text: bool = False
     default_application_days: int = 21
 
 
