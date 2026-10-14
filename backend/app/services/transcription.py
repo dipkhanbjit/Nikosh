@@ -105,13 +105,9 @@ class TranscriptionStream:
     """Runs a transcriber in its own task so feeding never blocks the audio socket."""
 
     def __init__(self, interview_id: int, role: str) -> None:
-        from app.services.transcript_turns import turns  # here to avoid a circular import
-
         self.interview_id = interview_id
         self.role = role
         self.engine = create_transcriber()
-        # Kept for the whole stream, so the last results still arrive after the room ended
-        self.turns = turns.get(interview_id)
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_CHUNKS)
         self._task: asyncio.Task | None = None
         self._dropped = 0
@@ -119,6 +115,11 @@ class TranscriptionStream:
         self._finals = 0
 
     async def start(self) -> None:
+        from app.services.transcript_turns import turns  # here to avoid a circular import
+
+        # Kept for the whole stream, so the last results still arrive after the room ended
+        self.turns = await turns.get(self.interview_id)
+        self.turns.streams += 1
         try:
             await self.engine.start(self.interview_id, self.role, self._on_event)
         except Exception as exc:
@@ -217,6 +218,7 @@ class TranscriptionStream:
             await self.turns.speaker_stopped(self.role)
         except Exception:
             logger.exception("Interview %s: %s transcript turn could not be closed", self.interview_id, self.role)
+        self.turns.streams -= 1
         logger.info(
             "Interview %s: transcriber stopped for %s (%d final, %d interim results, %d chunks dropped)",
             self.interview_id,

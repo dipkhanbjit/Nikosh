@@ -1,6 +1,7 @@
 """Grouping rules of the TurnBuilder. Run from backend/: python -m unittest tests.test_transcript_turns"""
 
 import unittest
+from types import SimpleNamespace
 
 from app.services.transcript_turns import TurnBuilder
 from app.services.transcription import TranscriptEvent
@@ -59,7 +60,7 @@ class TurnBuilderTest(unittest.IsolatedAsyncioTestCase):
             final(I, "Go ahead.", 2.5, 3.0),
         )
         self.assertEqual([t.role for t in turns], [I, C, I])
-        self.assertEqual([t.seq for t in turns], [0, 1, 2])
+        self.assertEqual([t.position for t in turns], [0, 1, 2])
         self.assertEqual(self.closed, [1, 2])
         self.assertTrue(turns[0].closed and turns[1].closed)
         self.assertFalse(turns[2].closed)
@@ -92,12 +93,12 @@ class TurnBuilderTest(unittest.IsolatedAsyncioTestCase):
         await self.feed(final(I, "testing?", 2.3, 2.8))  # merges: the candidate started before 2.0
         self.assertEqual(self.texts(), [(I, "And what about testing?"), (C, "Sorry,")])
         self.assertEqual(self.closed, [2])  # the interviewer went on after the candidate's end
-        self.assertEqual([t.seq for t in turns], [0, 1])
+        self.assertEqual([t.position for t in turns], [0, 1])
 
     async def test_late_overlapping_turn_is_ordered_by_start(self):
         await self.feed(final(C, "Answer.", 2.0, 3.0), final(I, "Question?", 1.0, 2.5))
         self.assertEqual(self.texts(), [(I, "Question?"), (C, "Answer.")])
-        self.assertEqual([t.seq for t in self.builder.turns], [0, 1])
+        self.assertEqual([t.position for t in self.builder.turns], [0, 1])
         self.assertIn(1, self.updated[-1:])  # the shifted candidate turn was reported
 
     async def test_incomplete_part(self):
@@ -123,6 +124,19 @@ class TurnBuilderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["interims"], {})
         self.assertTrue(snapshot["turns"][0]["closed"])
         self.assertNotIn("_conf_sum", snapshot["turns"][0])
+
+    async def test_restore_continues_ids(self):
+        saved = [
+            SimpleNamespace(seq=2, speaker=C, text="Yes.", start_s=3.0, end_s=4.0, confidence=0.9, incomplete=False),
+            SimpleNamespace(seq=1, speaker=I, text="Ready?", start_s=0.0, end_s=1.0, confidence=None, incomplete=True),
+        ]
+        self.builder.restore(saved)
+        await self.feed(final(I, "Let's start.", 5.0, 6.0))
+        snapshot = self.builder.snapshot()["turns"]
+        self.assertEqual([t["id"] for t in snapshot], [1, 2, 3])
+        self.assertEqual([t["position"] for t in snapshot], [0, 1, 2])
+        self.assertEqual([t["closed"] for t in snapshot], [True, True, False])
+        self.assertTrue(snapshot[0]["incomplete"])
 
 
 if __name__ == "__main__":
