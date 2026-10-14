@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { endInterview, formatDateTime, getInterview, startInterview } from "../api/interviews";
 import DeviceCheck from "../components/room/DeviceCheck";
 import InterviewerPanel from "../components/room/InterviewerPanel";
-import { TranscriptIcon } from "../components/room/icons";
+import LiveTranscript from "../components/room/LiveTranscript";
 import RoomChat from "../components/room/RoomChat";
 import RoomLayout from "../components/room/RoomLayout";
 import { Alert, Button, Modal, Spinner } from "../components/ui";
@@ -27,19 +27,6 @@ function Message({ children }) {
   );
 }
 
-// Interviewer only; filled by live transcription in Module 7
-function TranscriptPlaceholder() {
-  return (
-    <section className="flex h-28 shrink-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2 text-sm font-semibold text-gray-900">
-        <TranscriptIcon className="h-4 w-4 text-gray-500" />
-        Live transcript
-      </div>
-      <p className="flex flex-1 items-center justify-center text-sm text-gray-500">Live transcript will appear here</p>
-    </section>
-  );
-}
-
 export default function InterviewerRoom() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -51,7 +38,7 @@ export default function InterviewerRoom() {
   const [endError, setEndError] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const chat = useRoomChat(id, { ownRole: "interviewer", open: chatOpen });
-  const transcript = useLiveTranscript(); // 7.3.2 shows it in the transcript panel
+  const transcript = useLiveTranscript();
 
   const room = useRoomSocket(stream ? `/ws/interviews/${id}` : null, {
     onSignal: (data) => call.handleSignal(data),
@@ -189,7 +176,14 @@ export default function InterviewerRoom() {
             />
           ),
         }}
-        bottomPanel={<TranscriptPlaceholder />}
+        bottomPanel={
+          <LiveTranscript
+            turns={transcript.turns}
+            interims={transcript.interims}
+            status={transcript.status}
+            candidateName={interview.candidate_name}
+          />
+        }
       />
 
       <Modal

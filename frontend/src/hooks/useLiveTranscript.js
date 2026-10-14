@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 const bySpokenOrder = (a, b) => a.start_s - b.start_s || a.seq - b.seq;
 
-// Live transcript state for the interviewer room (7.3.1; the panel is 7.3.2).
+// Live transcript state for the interviewer room (shown by LiveTranscript).
 // receive(message): a transcript-* event from the room socket:
 //   transcript-snapshot (on join / reconnect: replaces everything), transcript-turn (open or
 //   closed turn, replaced by seq), transcript-interim (empty text clears it), transcript-status.
@@ -32,11 +32,6 @@ export default function useLiveTranscript() {
       setStatus((current) => ({ ...current, [message.speaker]: message.state }));
     }
   }, []);
-
-  // TEMP (7.3.1 testing): remove with the 7.3.2 panel
-  useEffect(() => {
-    console.debug("[transcript]", { turns, interims, status });
-  }, [turns, interims, status]);
 
   return { turns, interims, status, receive };
 }
