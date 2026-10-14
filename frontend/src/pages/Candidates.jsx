@@ -17,6 +17,7 @@ import {
 import { getScoreWeights, listJobs } from "../api/jobs";
 import CandidateProfileModal from "../components/CandidateProfileModal";
 import CredentialsModal from "../components/CredentialsModal";
+import ScheduleAssistant from "../components/ScheduleAssistant";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Spinner, Table, Textarea } from "../components/ui";
 
 const DEFAULT_TOP_N = 5;
@@ -525,6 +526,12 @@ export default function Candidates() {
           once approved, replace the current shortlist. Candidates with an active interview stay shortlisted.
         </p>
       </Modal>
+
+      <ScheduleAssistant
+        jobId={jobId}
+        jobTitle={jobs.find((job) => String(job.id) === jobId)?.title}
+        hasShortlist={shortlist?.status === "approved"}
+      />
     </div>
   );
 }
