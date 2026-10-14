@@ -117,6 +117,14 @@ class RoomManager:
         if peer:
             await peer.send({"type": "signal", "data": data})
 
+    async def send_to_role(self, interview_id: int, role: str, message: dict) -> bool:
+        """Send to one participant only (role from the login); False if not connected (not queued)."""
+        conn = self._rooms.get(interview_id, {}).get(role)
+        if not conn:
+            return False
+        await conn.send(message)
+        return True
+
     async def broadcast(self, interview_id: int, message: dict) -> None:
         conns = list(self._rooms.get(interview_id, {}).values())
         for conn in conns:

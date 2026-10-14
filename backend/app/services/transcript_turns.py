@@ -54,8 +54,27 @@ class Turn:
         del data["_conf_sum"], data["_conf_len"]
         return data
 
+    def to_message(self) -> dict:
+        """The turn as sent to the interviewer's browser (7.3.1)."""
+        return {
+            "seq": self.id,
+            "speaker": self.role,
+            "text": self.text,
+            "start_s": self.start_s,
+            "end_s": self.end_s,
+            "confidence": self.confidence,
+            "incomplete": self.incomplete,
+            "closed": self.closed,
+        }
+
 
 OnTurn = Callable[[Turn], Awaitable[None]]
+OnInterim = Callable[[int, str, dict | None], Awaitable[None]]  # interview_id, role, interim (None = cleared)
+OnStatus = Callable[[int, str, str], Awaitable[None]]  # interview_id, role, state
+
+
+async def _ignore(*args) -> None:
+    pass
 
 
 def _log_turn(action: str, turn: Turn) -> None:
@@ -68,7 +87,6 @@ def _log_turn(action: str, turn: Turn) -> None:
 
 
 async def log_turn_updated(turn: Turn) -> None:
-    """7.3.1 sends the turn to the interviewer; for now only logged."""
     if logger.isEnabledFor(logging.DEBUG):
         _log_turn("updated", turn)
 
@@ -87,16 +105,21 @@ class TurnBuilder:
         on_turn_updated: OnTurn = log_turn_updated,
         on_turn_closed: OnTurn = log_turn_closed,
         save: bool = False,
+        on_interim: OnInterim = _ignore,
+        on_status: OnStatus = _ignore,
     ) -> None:
         self.interview_id = interview_id
         self.on_turn_updated = on_turn_updated
         self.on_turn_closed = on_turn_closed
+        self.on_interim = on_interim
+        self.on_status = on_status
         self.save = save  # save closed turns to the database (off in tests and the dev script)
         self.pending: set[asyncio.Task] = set()  # saves still running
         self.streams = 0  # transcription streams using this builder
         self.turns: list[Turn] = []  # ordered by start_s
         self.open: dict[str, Turn] = {}  # role -> its open turn
         self.interims: dict[str, dict] = {}  # role -> {"text", "start_s"}
+        self.status: dict[str, str] = {}  # role -> transcriber state (active / reconnecting / unavailable / stub / off)
         self._next_id = 1
         self._lock = asyncio.Lock()  # both speakers' streams call add()
 
@@ -122,8 +145,9 @@ class TurnBuilder:
             if not event.is_final:
                 if text:
                     self.interims[role] = {"text": text, "start_s": event.start_s}
+                    await self.on_interim(self.interview_id, role, self.interims[role])
                 return
-            self.interims.pop(role, None)
+            await self._clear_interim(role)
             if not text:
                 return
             # The other speaker's turn ends when this speaker starts after it (overlap keeps both open)
@@ -177,11 +201,19 @@ class TurnBuilder:
                 self.pending.add(task)
                 task.add_done_callback(self.pending.discard)
 
+    async def _clear_interim(self, role: str) -> None:
+        if self.interims.pop(role, None):
+            await self.on_interim(self.interview_id, role, None)
+
     async def speaker_stopped(self, role: str) -> None:
         """The speaker's stream stopped: close the open turn and drop the preview."""
         async with self._lock:
-            self.interims.pop(role, None)
+            await self._clear_interim(role)
             await self._close(role)
+
+    async def set_status(self, role: str, state: str) -> None:
+        self.status[role] = state
+        await self.on_status(self.interview_id, role, state)
 
     def snapshot(self) -> dict:
         """All turns in order plus each speaker's current interim text (for a reconnect)."""
@@ -202,7 +234,16 @@ class TurnRegistry:
         async with self._lock:
             builder = self._builders.get(interview_id)
             if builder is None:
-                builder = TurnBuilder(interview_id, save=True)
+                from app.services import live_transcript  # here to avoid a circular import
+
+                builder = TurnBuilder(
+                    interview_id,
+                    on_turn_updated=live_transcript.turn_updated,
+                    on_turn_closed=live_transcript.turn_closed,
+                    save=True,
+                    on_interim=live_transcript.interim_changed,
+                    on_status=live_transcript.status_changed,
+                )
                 try:
                     builder.restore(await asyncio.to_thread(list_turns, interview_id))
                 except Exception:
