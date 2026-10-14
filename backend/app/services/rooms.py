@@ -6,6 +6,7 @@ import anyio.from_thread
 from fastapi import WebSocket
 
 from app.services.audio import audio
+from app.services.transcript_turns import turns
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,7 @@ async def end_room(interview_id: int, reason: str) -> None:
     await rooms.broadcast(interview_id, {"type": "interview-ended", "reason": reason})
     await rooms.close_room(interview_id, f"Interview ended ({reason})")
     await audio.close_interview(interview_id, f"Interview ended ({reason})")
+    turns.remove(interview_id)  # open streams keep their builder until they stop
 
 
 def push_from_thread(interview_id: int, push, *args) -> None:

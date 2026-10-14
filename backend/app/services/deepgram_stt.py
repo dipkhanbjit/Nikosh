@@ -184,7 +184,7 @@ class DeepgramTranscriber(Transcriber):
             ("punctuate", "true"),
             ("interim_results", "true"),
             ("endpointing", "300"),
-            ("utterance_end_ms", "1000"),
+            ("utterance_end_ms", "2000"),  # UtteranceEnd after ~2 s of silence closes a turn (7.2)
         ]
         name = "keyterm" if settings.deepgram_model.startswith("nova-3") else "keywords"
         params += [(name, term) for term in keyterms]
@@ -356,6 +356,12 @@ class DeepgramTranscriber(Transcriber):
                 if not isinstance(message, str):
                     continue
                 data = json.loads(message)
+                if data.get("type") == "UtteranceEnd":
+                    end = time_map.to_interview(float(data.get("last_word_end", 0.0)))
+                    await self._emit(
+                        TranscriptEvent(self.interview_id, self.role, "", True, end, end, utterance_end=True)
+                    )
+                    continue
                 if data.get("type") != "Results":
                     continue
                 if data.get("is_final"):
@@ -393,6 +399,7 @@ class DeepgramTranscriber(Transcriber):
             start_s=time_map.to_interview(start),
             end_s=time_map.to_interview(end),
             confidence=best.get("confidence"),
+            speech_final=bool(data.get("speech_final")),
         )
 
     async def stop(self) -> None:
