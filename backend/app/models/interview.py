@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 
 INTERVIEW_STATUSES = ("scheduled", "in_progress", "completed", "cancelled", "no_show")
 ACTIVE_STATUSES = ("scheduled", "in_progress")
+# Same default as the manual Schedule modal (frontend DEFAULT_DURATION)
+DEFAULT_DURATION_MINUTES = 30
+MIN_DURATION_MINUTES = 15
+MAX_DURATION_MINUTES = 120
 
 
 class Interview(TimestampMixin, Base):
@@ -24,7 +28,7 @@ class Interview(TimestampMixin, Base):
         ForeignKey("candidates.id", ondelete="CASCADE"), index=True
     )
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    duration_minutes: Mapped[int] = mapped_column(default=30)
+    duration_minutes: Mapped[int] = mapped_column(default=DEFAULT_DURATION_MINUTES)
     status: Mapped[str] = mapped_column(String(20), default="scheduled")
     notes: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

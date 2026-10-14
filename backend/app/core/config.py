@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # Log transcript text (testing only); otherwise only counts, timing and length are logged
     transcript_log_text: bool = False
     default_application_days: int = 21
+    # Scheduling assistant rules (Asia/Dhaka)
+    working_days: str = "mon,tue,wed,thu,fri"
+    office_start: str = "09:00"
+    office_end: str = "18:00"
+    # Testing only: every planned invitation goes here, e.g. dipkhan870+{name}@gmail.com
+    # ({name} = candidate's first name in lowercase). Empty = real candidate emails.
+    invite_email_override: str = ""
 
 
 @lru_cache

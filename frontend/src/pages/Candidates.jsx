@@ -17,6 +17,7 @@ import {
 import { getScoreWeights, listJobs } from "../api/jobs";
 import CandidateProfileModal from "../components/CandidateProfileModal";
 import CredentialsModal from "../components/CredentialsModal";
+import ScheduleAssistant from "../components/ScheduleAssistant";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Spinner, Table, Textarea } from "../components/ui";
 
 const DEFAULT_TOP_N = 5;
@@ -151,6 +152,17 @@ export default function Candidates() {
     scheduling.duration <= MAX_DURATION;
   const emailValid = EMAIL_PATTERN.test(scheduling?.email?.trim() || "");
   const scheduleValid = scheduling?.date && scheduling?.time && !scheduleInPast && durationValid && emailValid;
+
+  // After the scheduling assistant confirms a plan: show the new interview statuses
+  const handleAssistantScheduled = async () => {
+    try {
+      const [list, jobInterviews] = await Promise.all([listCandidates(jobId), listJobInterviews(jobId)]);
+      setCandidates(list);
+      setInterviews(jobInterviews);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const handleSchedule = async () => {
     const { item, email, date, time, duration, notes } = scheduling;
@@ -525,6 +537,13 @@ export default function Candidates() {
           once approved, replace the current shortlist. Candidates with an active interview stay shortlisted.
         </p>
       </Modal>
+
+      <ScheduleAssistant
+        jobId={jobId}
+        jobTitle={jobs.find((job) => String(job.id) === jobId)?.title}
+        hasShortlist={shortlist?.status === "approved"}
+        onScheduled={handleAssistantScheduled}
+      />
     </div>
   );
 }
