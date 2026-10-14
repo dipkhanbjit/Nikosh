@@ -3,6 +3,7 @@ from app.models.deleted_application import DeletedApplication
 from app.models.interview import Interview
 from app.models.interview_audio_part import InterviewAudioPart
 from app.models.interview_message import InterviewMessage
+from app.models.interview_transcript_turn import InterviewTranscriptTurn
 from app.models.job import Job
 from app.models.knowledge import KBChunk, KBDocument
 from app.models.screening_run import ScreeningRun
@@ -16,6 +17,7 @@ __all__ = [
     "Interview",
     "InterviewAudioPart",
     "InterviewMessage",
+    "InterviewTranscriptTurn",
     "KBDocument",
     "KBChunk",
     "ScreeningRun",

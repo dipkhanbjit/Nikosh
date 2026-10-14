@@ -25,6 +25,8 @@ class TranscriptEvent:
     end_s: float
     confidence: float | None = None
     incomplete: bool = False  # the last interim text of a stream that dropped, kept as a final
+    speech_final: bool = False  # Deepgram endpointing: a short pause (~300 ms) after this final
+    utterance_end: bool = False  # no text: the speaker was silent ~2 s after start_s (Deepgram UtteranceEnd)
 
 
 @dataclass
@@ -113,6 +115,11 @@ class TranscriptionStream:
         self._finals = 0
 
     async def start(self) -> None:
+        from app.services.transcript_turns import turns  # here to avoid a circular import
+
+        # Kept for the whole stream, so the last results still arrive after the room ended
+        self.turns = await turns.get(self.interview_id)
+        self.turns.streams += 1
         try:
             await self.engine.start(self.interview_id, self.role, self._on_event)
         except Exception as exc:
@@ -133,10 +140,17 @@ class TranscriptionStream:
         )
 
     async def _on_event(self, event: TranscriptEvent | TranscriptStatus) -> None:
-        """For now only logs; 7.2 stores the events and 7.3 sends them (and the status) to the
-        interviewer. The text itself is logged only with TRANSCRIPT_LOG_TEXT=true."""
+        """Results go to the interview's TurnBuilder; 7.3 sends the status to the interviewer.
+        The text itself is logged only with TRANSCRIPT_LOG_TEXT=true."""
         if isinstance(event, TranscriptStatus):
             logger.info("Interview %s: %s transcription is %s", self.interview_id, self.role, event.state)
+            return
+        try:
+            await self.turns.add(event)
+        except Exception:
+            logger.exception("Interview %s: transcript turn update failed", self.interview_id)
+        if event.utterance_end:
+            logger.debug("Interview %s: %s utterance end at %.1f s", self.interview_id, self.role, event.start_s)
             return
         if not event.is_final:
             self._interim += 1
@@ -146,12 +160,12 @@ class TranscriptionStream:
         if event.incomplete:
             conf += ", incomplete"
         if settings.transcript_log_text:
-            logger.info(
+            logger.debug(
                 "Interview %s: %s final %.1f-%.1f s (conf %s): %s",
                 self.interview_id, self.role, event.start_s, event.end_s, conf, event.text,
             )  # fmt: skip
         else:
-            logger.info(
+            logger.debug(
                 "Interview %s: %s final %.1f-%.1f s (%d chars, conf %s)",
                 self.interview_id, self.role, event.start_s, event.end_s, len(event.text), conf,
             )  # fmt: skip
@@ -200,6 +214,11 @@ class TranscriptionStream:
             await self.engine.stop()
         except Exception:
             logger.exception("Interview %s: %s transcriber stop failed", self.interview_id, self.role)
+        try:
+            await self.turns.speaker_stopped(self.role)
+        except Exception:
+            logger.exception("Interview %s: %s transcript turn could not be closed", self.interview_id, self.role)
+        self.turns.streams -= 1
         logger.info(
             "Interview %s: transcriber stopped for %s (%d final, %d interim results, %d chunks dropped)",
             self.interview_id,

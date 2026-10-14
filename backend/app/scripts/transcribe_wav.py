@@ -44,6 +44,8 @@ def _start_offset(interview_id: int, role: str, part_no: int) -> float:
 async def _print_final(event: TranscriptEvent | TranscriptStatus) -> None:
     if isinstance(event, TranscriptStatus):
         print(f"-- transcription {event.state}", flush=True)
+    elif event.utterance_end:
+        print(f"-- utterance end at {_clock(event.start_s)}", flush=True)
     elif event.is_final:
         conf = f"{event.confidence:.2f}" if event.confidence is not None else "-"
         if event.incomplete:
