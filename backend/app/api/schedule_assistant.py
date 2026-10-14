@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from fastapi import APIRouter, Depends
 from langgraph.types import Command
@@ -8,12 +9,16 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_role
 from app.core.database import get_db
 from app.core.exceptions import AppException
-from app.models import Candidate, Job
+from app.models import Candidate, Job, User
 from app.schemas.schedule_assistant import AssistantMessage, AssistantState
 from app.workflows.checkpointer import get_checkpointer
 from app.workflows.scheduling_assistant import get_scheduling_graph
 
 logger = logging.getLogger(__name__)
+
+# Jobs with a confirm in progress (single worker): a second click gets 409
+_confirming: set[int] = set()
+_confirming_lock = threading.Lock()
 
 router = APIRouter(
     prefix="/jobs/{job_id}/schedule-assistant",
@@ -98,3 +103,28 @@ def cancel_assistant(job_id: int, db: Session = Depends(get_db)):
     get_checkpointer().delete_thread(_thread_id(job_id))
     logger.info("Scheduling assistant cancelled for job %s", job_id)
     return AssistantState(status="none")
+
+
+@router.post("/confirm", response_model=AssistantState)
+def confirm_plan(job_id: int, db: Session = Depends(get_db), user: User = Depends(require_role("interviewer"))):
+    """Schedule every planned candidate and send the invitations. The thread ends afterwards."""
+    _get_job(db, job_id)
+    with _confirming_lock:
+        if job_id in _confirming:
+            raise AppException("This plan is already being confirmed", 409, "NO_OPEN_PLAN")
+        _confirming.add(job_id)
+    try:
+        if _current_state(job_id).status != "plan":
+            raise AppException("There is no plan to confirm", 409, "NO_OPEN_PLAN")
+        graph = get_scheduling_graph()
+        try:
+            graph.invoke(Command(resume={"action": "confirm", "user_id": user.id}), _config(job_id))
+        except Exception:
+            logger.exception("Scheduling assistant confirm failed for job %s", job_id)
+            raise AppException("Scheduling failed, please check the Interviews page", 500,
+                               "SCHEDULE_ASSISTANT_ERROR") from None
+        results = graph.get_state(_config(job_id)).values.get("results") or []
+        return AssistantState(status="done", results=results)
+    finally:
+        with _confirming_lock:
+            _confirming.discard(job_id)

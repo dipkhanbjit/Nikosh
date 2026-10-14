@@ -153,6 +153,17 @@ export default function Candidates() {
   const emailValid = EMAIL_PATTERN.test(scheduling?.email?.trim() || "");
   const scheduleValid = scheduling?.date && scheduling?.time && !scheduleInPast && durationValid && emailValid;
 
+  // After the scheduling assistant confirms a plan: show the new interview statuses
+  const handleAssistantScheduled = async () => {
+    try {
+      const [list, jobInterviews] = await Promise.all([listCandidates(jobId), listJobInterviews(jobId)]);
+      setCandidates(list);
+      setInterviews(jobInterviews);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleSchedule = async () => {
     const { item, email, date, time, duration, notes } = scheduling;
     setSavingInterview(true);
@@ -531,6 +542,7 @@ export default function Candidates() {
         jobId={jobId}
         jobTitle={jobs.find((job) => String(job.id) === jobId)?.title}
         hasShortlist={shortlist?.status === "approved"}
+        onScheduled={handleAssistantScheduled}
       />
     </div>
   );

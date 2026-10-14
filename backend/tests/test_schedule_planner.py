@@ -12,7 +12,9 @@ from app.services.schedule_planner import (
     ScheduleIntent,
     build_plan,
     match_name,
+    name_slug,
     pick_email,
+    recheck_item,
 )
 
 RULES = Rules(frozenset({0, 1, 2, 3, 4}), time(9, 0), time(18, 0))
@@ -195,3 +197,60 @@ class SelectionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+OVERRIDE = "dipkhan870+{name}@gmail.com"
+
+
+class EmailOverrideTest(unittest.TestCase):
+    def test_override_uses_first_name_slug(self):
+        self.assertEqual(pick_email(RAHIM, override=OVERRIDE), ("dipkhan870+rahim@gmail.com", "test"))
+
+    def test_override_beats_chat_email(self):
+        self.assertEqual(pick_email(KARIM, "real@example.com", OVERRIDE), ("dipkhan870+karim@gmail.com", "test"))
+
+    def test_slug_keeps_letters_and_digits_only(self):
+        self.assertEqual(name_slug(person(7, "Md. Abdul Karim")), "md")
+        self.assertEqual(name_slug(person(8, "O'Neil Smith")), "oneil")
+
+    def test_slug_fallback_without_name(self):
+        self.assertEqual(name_slug(person(9, None)), "candidate9")
+        self.assertEqual(name_slug(person(10, "...")), "candidate10")
+
+    def test_empty_override_uses_real_email(self):
+        self.assertEqual(pick_email(RAHIM, override=""), ("rahim@example.com", "form"))
+
+    def test_plan_items_use_override(self):
+        rules = Rules(RULES.working_days, RULES.office_start, RULES.office_end, OVERRIDE)
+        result = build_plan(ScheduleIntent(selection="top_n", top_n=2, date="2026-10-15", start_time="10:00"),
+                            SHORTLIST, set(), [], NOW, rules)
+        self.assertEqual([(i["email"], i["email_source"]) for i in result["items"]], [
+            ("dipkhan870+rahim@gmail.com", "test"), ("dipkhan870+karim@gmail.com", "test"),
+        ])
+
+
+def item(cid=1, start=at(15, 10), minutes=30):
+    return {"candidate_id": cid, "name": "x", "email": "x@example.com", "email_source": "form",
+            "start": start.isoformat(), "duration_min": minutes}
+
+
+class RecheckTest(unittest.TestCase):
+    def test_still_valid(self):
+        self.assertIsNone(recheck_item(item(), {1}, set(), [], NOW))
+
+    def test_no_longer_shortlisted(self):
+        self.assertEqual(recheck_item(item(), {2}, set(), [], NOW), "No longer shortlisted")
+
+    def test_already_scheduled(self):
+        self.assertEqual(recheck_item(item(), {1}, {1}, [], NOW), "Already has an active interview")
+
+    def test_start_in_the_past(self):
+        self.assertEqual(recheck_item(item(), {1}, set(), [], at(15, 10)), "Start time has passed")
+
+    def test_slot_taken(self):
+        busy = [(at(15, 10, 15), at(15, 10, 45))]
+        self.assertEqual(recheck_item(item(), {1}, set(), busy, NOW), "Time slot is no longer free")
+
+    def test_adjacent_slot_is_free(self):
+        busy = [(at(15, 9, 30), at(15, 10))]
+        self.assertIsNone(recheck_item(item(), {1}, set(), busy, NOW))

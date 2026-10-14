@@ -142,6 +142,40 @@ def ensure_candidate_account(db: Session, candidate: Candidate) -> tuple[str, st
     return email, password
 
 
+def create_interview(
+    db: Session,
+    job: Job,
+    candidate_id: int,
+    scheduled_at: datetime,
+    duration_minutes: int,
+    created_by: int,
+    contact_email: str | None = None,
+    notes: str | None = None,
+) -> tuple[Interview, str, str]:
+    """Schedule one interview: validate, set up the candidate login, save, then send the invitation.
+    Used by the Schedule button and the scheduling assistant. Returns (interview, email, password);
+    raises AppException before anything is saved. The invitation result is stored on the interview."""
+    from app.services.invitations import send_invitation  # invitations imports this module
+
+    ensure_future(scheduled_at)
+    candidate = validate_candidate(db, job, candidate_id, contact_email)
+    email, password = ensure_candidate_account(db, candidate)
+    interview = Interview(
+        job_id=job.id,
+        candidate_id=candidate.id,
+        scheduled_at=scheduled_at,
+        duration_minutes=duration_minutes,
+        notes=notes,
+        created_by=created_by,
+    )
+    db.add(interview)
+    db.commit()
+    db.refresh(interview)
+    logger.info("Interview %s scheduled for candidate %s at %s", interview.id, candidate.id, interview.scheduled_at)
+    send_invitation(db, interview, password)  # never undoes the schedule; result stored on the interview
+    return interview, email, password
+
+
 def mark_no_shows() -> list[int]:
     """Mark scheduled interviews whose end time has passed as no-show. Returns their ids."""
     now = datetime.now(timezone.utc)

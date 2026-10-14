@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatDateTime } from "../api/interviews";
-import { cancelAssistant, getAssistant, sendAssistantMessage } from "../api/scheduleAssistant";
+import { cancelAssistant, confirmAssistant, getAssistant, sendAssistantMessage } from "../api/scheduleAssistant";
 import { Badge, Button, Spinner } from "./ui";
 
-const SOURCE_LABEL = { chat: "chat", form: "form", cv: "CV" };
+const SOURCE_LABEL = { chat: "chat", form: "form", cv: "CV", test: "test" };
+const RESULT_BADGE = {
+  sent: { color: "green", label: "Sent" },
+  failed: { color: "red", label: "Failed" },
+  skipped: { color: "yellow", label: "Skipped" },
+};
 
 // Assistant state from the API → chat message (null when nothing is open)
 const fromState = (state) => (state.status === "none" ? null : { role: "assistant", state });
@@ -29,7 +34,9 @@ function PlanTable({ items }) {
             </td>
             <td className="py-1.5 text-gray-700">
               <span className="block break-all">{item.email}</span>
-              <Badge>{SOURCE_LABEL[item.email_source] ?? item.email_source}</Badge>
+              <Badge color={item.email_source === "test" ? "purple" : "gray"}>
+                {SOURCE_LABEL[item.email_source] ?? item.email_source}
+              </Badge>
             </td>
           </tr>
         ))}
@@ -38,11 +45,50 @@ function PlanTable({ items }) {
   );
 }
 
+function ResultTable({ results }) {
+  return (
+    <table className="mt-2 w-full text-left text-xs">
+      <thead className="text-gray-500">
+        <tr>
+          <th className="py-1 pr-2 font-medium">Candidate</th>
+          <th className="py-1 pr-2 font-medium">Date and time</th>
+          <th className="py-1 font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100">
+        {results.map((r) => (
+          <tr key={r.candidate_id} className="align-top">
+            <td className="py-1.5 pr-2 font-medium text-gray-800">{r.name || `#${r.candidate_id}`}</td>
+            <td className="py-1.5 pr-2 text-gray-700">{formatDateTime(r.start)}</td>
+            <td className="py-1.5 text-gray-700">
+              <Badge color={RESULT_BADGE[r.status].color}>{RESULT_BADGE[r.status].label}</Badge>
+              {r.reason && <span className="mt-0.5 block text-gray-500">{r.reason}</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const resultSummary = (results) =>
+  ["sent", "failed", "skipped"]
+    .map((status) => [results.filter((r) => r.status === status).length, status])
+    .filter(([count]) => count > 0)
+    .map(([count, status]) => `${count} ${status}`)
+    .join(", ") || "Nothing was scheduled.";
+
 function AssistantBubble({ state, actions }) {
   return (
     <div className="max-w-[90%] self-start rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm">
       {state.message && <p className="whitespace-pre-wrap">{state.message}</p>}
       {state.status === "plan" && state.items.length > 0 && <PlanTable items={state.items} />}
+      {state.status === "done" && (
+        <>
+          <p>{resultSummary(state.results)}</p>
+          {state.results.length > 0 && <ResultTable results={state.results} />}
+        </>
+      )}
       {state.skipped.length > 0 && (
         <div className="mt-2 text-xs text-gray-600">
           <p className="font-medium">Skipped:</p>
@@ -61,10 +107,10 @@ function AssistantBubble({ state, actions }) {
 }
 
 // Chat for one job; render with key={jobId} so each job starts with a fresh history
-function AssistantChat({ jobId, open, hasShortlist }) {
+function AssistantChat({ jobId, open, hasShortlist, onScheduled }) {
   const [messages, setMessages] = useState([]); // { role: "user" | "assistant" | "error" | "info", text?, state? }
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(""); // text shown while waiting, "" when idle
   const [restoring, setRestoring] = useState(true);
   const [noShortlist, setNoShortlist] = useState(false);
   const fetched = useRef(false);
@@ -89,7 +135,7 @@ function AssistantChat({ jobId, open, hasShortlist }) {
 
   const blocked = !jobId || !hasShortlist || noShortlist;
   const loading = !blocked && restoring;
-  const disabled = blocked || loading || busy;
+  const disabled = blocked || loading || Boolean(busy);
   const lastPlanIndex = messages.findLastIndex((m) => m.state?.status === "plan");
   const planOpen = lastPlanIndex !== -1 && !messages.slice(lastPlanIndex + 1).some((m) => m.state || m.cancelled);
 
@@ -100,7 +146,7 @@ function AssistantChat({ jobId, open, hasShortlist }) {
     if (!text || disabled) return;
     add({ role: "user", text });
     setInput("");
-    setBusy(true);
+    setBusy("Planning…");
     try {
       const message = fromState(await sendAssistantMessage(jobId, text));
       add(message ?? { role: "info", text: "Nothing to schedule." });
@@ -108,20 +154,32 @@ function AssistantChat({ jobId, open, hasShortlist }) {
       if (err.code === "NO_SHORTLIST") setNoShortlist(true);
       add({ role: "error", text: err.message });
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
 
   const cancel = async () => {
-    setBusy(true);
+    setBusy("Cancelling…");
     try {
       await cancelAssistant(jobId);
       add({ role: "info", text: "Plan cancelled.", cancelled: true });
     } catch (err) {
       add({ role: "error", text: err.message });
     } finally {
-      setBusy(false);
+      setBusy("");
     }
+  };
+
+  const confirm = async () => {
+    setBusy("Scheduling and sending invitations…");
+    try {
+      add({ role: "assistant", state: await confirmAssistant(jobId) });
+    } catch (err) {
+      add({ role: "error", text: err.message, cancelled: err.code === "NO_OPEN_PLAN" });
+    } finally {
+      setBusy("");
+    }
+    onScheduled?.();
   };
 
   const onKeyDown = (e) => {
@@ -133,14 +191,12 @@ function AssistantChat({ jobId, open, hasShortlist }) {
 
   const planActions = (
     <div className="mt-3 flex justify-end gap-2">
-      <Button variant="secondary" className="px-3 py-1 text-xs" onClick={cancel} disabled={busy}>
+      <Button variant="secondary" className="px-3 py-1 text-xs" onClick={cancel} disabled={Boolean(busy)}>
         Cancel
       </Button>
-      <span title="Available in the next step">
-        <Button className="px-3 py-1 text-xs" disabled>
-          Confirm and send
-        </Button>
-      </span>
+      <Button className="px-3 py-1 text-xs" onClick={confirm} disabled={Boolean(busy)}>
+        Confirm and send
+      </Button>
     </div>
   );
 
@@ -199,7 +255,7 @@ function AssistantChat({ jobId, open, hasShortlist }) {
         })}
         {busy && (
           <div className="flex items-center gap-2 self-start text-sm text-gray-500">
-            <Spinner size="sm" /> Planning…
+            <Spinner size="sm" /> {busy}
           </div>
         )}
         <div ref={listEnd} />
@@ -228,7 +284,7 @@ function AssistantChat({ jobId, open, hasShortlist }) {
 }
 
 // Floating scheduling assistant on the Candidates page (below Modal, which uses z-50)
-export default function ScheduleAssistant({ jobId, jobTitle, hasShortlist }) {
+export default function ScheduleAssistant({ jobId, jobTitle, hasShortlist, onScheduled }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -252,7 +308,7 @@ export default function ScheduleAssistant({ jobId, jobTitle, hasShortlist }) {
             </svg>
           </button>
         </div>
-        <AssistantChat key={jobId} jobId={jobId} open={open} hasShortlist={hasShortlist} />
+        <AssistantChat key={jobId} jobId={jobId} open={open} hasShortlist={hasShortlist} onScheduled={onScheduled} />
       </div>
 
       <button

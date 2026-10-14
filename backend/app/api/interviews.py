@@ -23,11 +23,11 @@ from app.schemas.transcript import TranscriptOut, TranscriptTurnOut
 from app.services.audio_recorder import part_sizes
 from app.services.interviews import (
     change_status,
+    create_interview,
     ensure_candidate_account,
     ensure_future,
     join_url,
     room_open,
-    validate_candidate,
 )
 from app.services.invitations import cancel_invitation, send_invitation
 from app.services.rooms import end_room, push_from_thread, rooms
@@ -89,22 +89,10 @@ def schedule_interview(
     user: User = Depends(require_role("interviewer")),
 ):
     job = _get_job(db, job_id)
-    ensure_future(payload.scheduled_at)
-    candidate = validate_candidate(db, job, payload.candidate_id, payload.contact_email)
-    email, password = ensure_candidate_account(db, candidate)
-    interview = Interview(
-        job_id=job.id,
-        candidate_id=candidate.id,
-        scheduled_at=payload.scheduled_at,
-        duration_minutes=payload.duration_minutes,
-        notes=payload.notes,
-        created_by=user.id,
+    interview, email, password = create_interview(
+        db, job, payload.candidate_id, payload.scheduled_at, payload.duration_minutes,
+        created_by=user.id, contact_email=payload.contact_email, notes=payload.notes,
     )
-    db.add(interview)
-    db.commit()
-    db.refresh(interview)
-    logger.info("Interview %s scheduled for candidate %s at %s", interview.id, candidate.id, interview.scheduled_at)
-    send_invitation(db, interview, password)  # never undoes the schedule; result stored on the interview
     out = _to_out(db, interview)
     out.credentials = Credentials(email=email, password=password)
     return out

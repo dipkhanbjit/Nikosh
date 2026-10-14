@@ -9,15 +9,19 @@ from langgraph.types import Command, interrupt
 from sqlalchemy import select
 
 from app.core.database import SessionLocal
-from app.models import Interview, Job
+from app.core.exceptions import AppException
+from app.models import Candidate, Interview, Job
 from app.models.interview import ACTIVE_STATUSES
 from app.services.ics import DHAKA
+from app.services.interviews import create_interview
 from app.services.llm import get_llm
 from app.services.ranking import ranked_candidates
-from app.services.schedule_planner import ScheduleIntent, build_plan, rules_from_settings
+from app.services.schedule_planner import ScheduleIntent, build_plan, recheck_item, rules_from_settings
 from app.workflows.checkpointer import get_checkpointer
 
 logger = logging.getLogger(__name__)
+
+MAX_REASON_LENGTH = 150
 
 
 class SchedulingGraphState(TypedDict, total=False):
@@ -26,6 +30,8 @@ class SchedulingGraphState(TypedDict, total=False):
     intent: dict | None  # ScheduleIntent of the last successful message
     plan: dict | None  # {items, skipped, message, question}
     llm_failed: bool
+    user_id: int | None  # interviewer who confirmed
+    results: list[dict] | None  # one ScheduleResult per planned item, after confirm
 
 
 def _prompt(shortlisted: list, current: dict | None, plan: dict | None, now: datetime) -> str:
@@ -65,6 +71,15 @@ def _read_intent(message: str, shortlisted: list, state: SchedulingGraphState, n
     return intent
 
 
+def _busy_slots(db) -> list[tuple[datetime, datetime]]:
+    """One interviewer: active interviews of every job block their slots."""
+    return [
+        (i.scheduled_at.astimezone(DHAKA),
+         (i.scheduled_at + timedelta(minutes=i.duration_minutes)).astimezone(DHAKA))
+        for i in db.scalars(select(Interview).where(Interview.status.in_(ACTIVE_STATUSES)))
+    ]
+
+
 def plan(state: SchedulingGraphState) -> dict:
     job_id = state["job_id"]
     now = datetime.now(timezone.utc)
@@ -76,12 +91,7 @@ def plan(state: SchedulingGraphState) -> dict:
                 Interview.job_id == job_id, Interview.status.in_(ACTIVE_STATUSES)
             )
         ).all())
-        # One interviewer: active interviews of every job block their slots
-        busy = [
-            (i.scheduled_at.astimezone(DHAKA),
-             (i.scheduled_at + timedelta(minutes=i.duration_minutes)).astimezone(DHAKA))
-            for i in db.scalars(select(Interview).where(Interview.status.in_(ACTIVE_STATUSES)))
-        ]
+        busy = _busy_slots(db)
         try:
             intent = _read_intent(state["message"], shortlisted, state, now)
         except Exception as exc:
@@ -97,11 +107,71 @@ def plan(state: SchedulingGraphState) -> dict:
     return {"intent": intent.model_dump(), "plan": result, "llm_failed": False}
 
 
-def review(state: SchedulingGraphState) -> Command[Literal["plan", "__end__"]]:
+def review(state: SchedulingGraphState) -> Command[Literal["plan", "execute", "__end__"]]:
     decision = interrupt({"plan": state.get("plan")})
     if decision["action"] == "revise":
         return Command(goto="plan", update={"message": decision["message"]})
+    if decision["action"] == "confirm":
+        return Command(goto="execute", update={"user_id": decision["user_id"]})
     return Command(goto=END)
+
+
+def _schedule_one(db, job: Job, item: dict, user_id: int) -> tuple[str, str | None, int | None]:
+    """Schedule one planned item with the same service as the Schedule button.
+    Returns (status, reason, interview_id)."""
+    try:
+        interview, _, _ = create_interview(
+            db, job, item["candidate_id"], datetime.fromisoformat(item["start"]), item["duration_min"],
+            created_by=user_id, contact_email=item["email"],
+        )
+    except AppException as exc:
+        db.rollback()
+        return "failed", exc.message, None
+    except Exception:
+        db.rollback()
+        logger.exception("Scheduling assistant job %s: candidate %s failed", job.id, item["candidate_id"])
+        return "failed", "Unexpected error, please schedule manually", None
+    if interview.invitation_status == "failed":
+        error = (interview.invitation_error or "Invitation not sent")[:MAX_REASON_LENGTH]
+        return "failed", f"{error}. Use Resend.", interview.id
+    return "sent", None, interview.id
+
+
+def execute(state: SchedulingGraphState) -> dict:
+    """Re-check every planned item in code, then schedule and invite them one by one (no LLM)."""
+    job_id = state["job_id"]
+    results = []
+    with SessionLocal() as db:
+        job = db.get(Job, job_id)
+        shortlisted_ids = set(db.scalars(
+            select(Candidate.id).where(Candidate.job_id == job_id, Candidate.shortlisted.is_(True))
+        ).all())
+        active_ids = set(db.scalars(
+            select(Interview.candidate_id).where(Interview.status.in_(ACTIVE_STATUSES))
+        ).all())
+        busy = _busy_slots(db)
+        for item in state["plan"]["items"]:
+            start = datetime.fromisoformat(item["start"])
+            reason = recheck_item(item, shortlisted_ids, active_ids, busy, datetime.now(timezone.utc))
+            if reason:
+                status, interview_id = "skipped", None
+            else:
+                status, reason, interview_id = _schedule_one(db, job, item, state["user_id"])
+                if interview_id:
+                    active_ids.add(item["candidate_id"])
+                    busy.append((start, start + timedelta(minutes=item["duration_min"])))
+            results.append({
+                "candidate_id": item["candidate_id"], "name": item["name"], "start": item["start"],
+                "status": status, "reason": reason, "interview_id": interview_id,
+            })
+
+    counts = {s: sum(r["status"] == s for r in results) for s in ("sent", "failed", "skipped")}
+    logger.info(
+        "Scheduling assistant job %s confirmed: %s sent, %s failed, %s skipped, interviews %s",
+        job_id, counts["sent"], counts["failed"], counts["skipped"],
+        [r["interview_id"] for r in results if r["interview_id"]],
+    )
+    return {"results": results}
 
 
 @lru_cache
@@ -109,6 +179,8 @@ def get_scheduling_graph():
     builder = StateGraph(SchedulingGraphState)
     builder.add_node("plan", plan)
     builder.add_node("review", review)
+    builder.add_node("execute", execute)
     builder.add_edge(START, "plan")
     builder.add_edge("plan", "review")
+    builder.add_edge("execute", END)
     return builder.compile(checkpointer=get_checkpointer())

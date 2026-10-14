@@ -14,7 +14,7 @@ class PlanItem(BaseModel):
     candidate_id: int
     name: str | None
     email: str
-    email_source: Literal["chat", "form", "cv"]
+    email_source: Literal["chat", "form", "cv", "test"]
     start: datetime  # Asia/Dhaka, +06:00
     duration_min: int
 
@@ -25,8 +25,18 @@ class SkippedCandidate(BaseModel):
     reason: str
 
 
+class ScheduleResult(BaseModel):
+    candidate_id: int
+    name: str | None
+    start: datetime
+    status: Literal["sent", "failed", "skipped"]
+    reason: str | None = None
+    interview_id: int | None = None
+
+
 class AssistantState(BaseModel):
-    status: Literal["none", "plan", "question"]
+    status: Literal["none", "plan", "question", "done"]
     items: list[PlanItem] = []
     skipped: list[SkippedCandidate] = []
+    results: list[ScheduleResult] = []  # after confirm
     message: str | None = None  # plan summary, or the question to answer

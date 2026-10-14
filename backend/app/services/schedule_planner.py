@@ -49,6 +49,7 @@ class Rules:
     working_days: frozenset[int]  # 0 = Monday
     office_start: time
     office_end: time
+    email_override: str = ""  # testing: e.g. "dipkhan870+{name}@gmail.com" replaces every email
 
 
 def rules_from_settings() -> Rules:
@@ -57,7 +58,10 @@ def rules_from_settings() -> Rules:
     )
     if not days:
         raise ValueError("WORKING_DAYS must name at least one day")
-    return Rules(days, time.fromisoformat(settings.office_start), time.fromisoformat(settings.office_end))
+    return Rules(
+        days, time.fromisoformat(settings.office_start), time.fromisoformat(settings.office_end),
+        settings.invite_email_override.strip(),
+    )
 
 
 class PlanQuestion(Exception):
@@ -86,8 +90,17 @@ def match_name(name: str, candidates: list) -> object:
     raise PlanQuestion(f'"{name}" matches {options}. Which one do you mean?')
 
 
-def pick_email(candidate, chat_email: str | None = None) -> tuple[str | None, str | None]:
-    """Email and its source: chat -> application form -> CV."""
+def name_slug(candidate) -> str:
+    """Lowercase first name, letters and digits only (fallback: candidate<id>)."""
+    first = (candidate.full_name or "").split()[:1]
+    slug = re.sub(r"[^a-z0-9]", "", first[0].lower()) if first else ""
+    return slug or f"candidate{candidate.id}"
+
+
+def pick_email(candidate, chat_email: str | None = None, override: str = "") -> tuple[str | None, str | None]:
+    """Email and its source: test override -> chat -> application form -> CV."""
+    if override:
+        return override.replace("{name}", name_slug(candidate)).lower(), "test"
     if chat_email:
         return chat_email.strip().lower(), "chat"
     if candidate.source == "form" and candidate.email:
@@ -224,7 +237,7 @@ def _plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int], busy:
         chat_email = request.email if request else None
         if chat_email and not EMAIL_RE.match(chat_email.strip()):
             raise PlanQuestion(f'"{chat_email}" is not a valid email address. Please check it.')
-        email, source = pick_email(candidate, chat_email)
+        email, source = pick_email(candidate, chat_email, rules.email_override)
         if not email:
             skipped.append({"candidate_id": candidate.id, "name": candidate.full_name,
                             "reason": "No email address (give one in the message)"})
@@ -296,3 +309,19 @@ def build_plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int],
     except PlanQuestion as question:
         return {"items": [], "skipped": skipped, "message": None, "question": str(question)}
     return {"items": items, "skipped": skipped, "message": message, "question": None}
+
+
+def recheck_item(item: dict, shortlisted_ids: set[int], active_ids: set[int],
+                 busy: list[tuple[datetime, datetime]], now: datetime) -> str | None:
+    """Before confirming: why this planned item can no longer be scheduled, or None if it still can.
+    busy: active interview slots of all jobs (plus the ones scheduled earlier in this batch)."""
+    if item["candidate_id"] not in shortlisted_ids:
+        return "No longer shortlisted"
+    if item["candidate_id"] in active_ids:
+        return "Already has an active interview"
+    start = datetime.fromisoformat(item["start"])
+    if start <= now:
+        return "Start time has passed"
+    if _conflict(start, start + timedelta(minutes=item["duration_min"]), busy):
+        return "Time slot is no longer free"
+    return None
