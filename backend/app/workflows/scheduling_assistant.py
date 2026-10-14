@@ -16,7 +16,14 @@ from app.services.ics import DHAKA
 from app.services.interviews import create_interview
 from app.services.llm import get_llm
 from app.services.ranking import ranked_candidates
-from app.services.schedule_planner import ScheduleIntent, build_plan, recheck_item, rules_from_settings
+from app.services.schedule_planner import (
+    BLOCK_REASONS,
+    ScheduleIntent,
+    blocked_reasons,
+    build_plan,
+    recheck_item,
+    rules_from_settings,
+)
 from app.workflows.checkpointer import get_checkpointer
 
 logger = logging.getLogger(__name__)
@@ -80,17 +87,22 @@ def _busy_slots(db) -> list[tuple[datetime, datetime]]:
     ]
 
 
+def _blocked(db, job_id: int) -> dict[int, str]:
+    """Candidates of this job with a non-cancelled interview -> skip reason."""
+    return blocked_reasons(db.execute(
+        select(Interview.candidate_id, Interview.status).where(
+            Interview.job_id == job_id, Interview.status != "cancelled"
+        )
+    ).all())
+
+
 def plan(state: SchedulingGraphState) -> dict:
     job_id = state["job_id"]
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         job = db.get(Job, job_id)
         shortlisted = [c for c in ranked_candidates(db, job) if c.shortlisted]
-        active_ids = set(db.scalars(
-            select(Interview.candidate_id).where(
-                Interview.job_id == job_id, Interview.status.in_(ACTIVE_STATUSES)
-            )
-        ).all())
+        blocked = _blocked(db, job_id)
         busy = _busy_slots(db)
         try:
             intent = _read_intent(state["message"], shortlisted, state, now)
@@ -98,7 +110,7 @@ def plan(state: SchedulingGraphState) -> dict:
             # Keep the previous plan; the API reports the failure
             logger.error("Scheduling assistant: Gemini failed for job %s: %s", job_id, exc.__class__.__name__)
             return {"llm_failed": True}
-        result = build_plan(intent, shortlisted, active_ids, busy, now, rules_from_settings())
+        result = build_plan(intent, shortlisted, blocked, busy, now, rules_from_settings())
 
     logger.info(
         "Scheduling assistant job %s: %s planned, %s skipped, question=%s",
@@ -146,19 +158,17 @@ def execute(state: SchedulingGraphState) -> dict:
         shortlisted_ids = set(db.scalars(
             select(Candidate.id).where(Candidate.job_id == job_id, Candidate.shortlisted.is_(True))
         ).all())
-        active_ids = set(db.scalars(
-            select(Interview.candidate_id).where(Interview.status.in_(ACTIVE_STATUSES))
-        ).all())
+        blocked = _blocked(db, job_id)
         busy = _busy_slots(db)
         for item in state["plan"]["items"]:
             start = datetime.fromisoformat(item["start"])
-            reason = recheck_item(item, shortlisted_ids, active_ids, busy, datetime.now(timezone.utc))
+            reason = recheck_item(item, shortlisted_ids, blocked, busy, datetime.now(timezone.utc))
             if reason:
                 status, interview_id = "skipped", None
             else:
                 status, reason, interview_id = _schedule_one(db, job, item, state["user_id"])
                 if interview_id:
-                    active_ids.add(item["candidate_id"])
+                    blocked[item["candidate_id"]] = BLOCK_REASONS["scheduled"]
                     busy.append((start, start + timedelta(minutes=item["duration_min"])))
             results.append({
                 "candidate_id": item["candidate_id"], "name": item["name"], "start": item["start"],

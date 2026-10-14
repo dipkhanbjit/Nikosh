@@ -17,6 +17,15 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 MAX_GAP_MINUTES = 120
 MAX_SEARCH_STEPS = 500
 DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+# Any interview of this job that is not cancelled blocks a new one (re-interviewing stays manual).
+# In priority order, for a candidate with more than one interview.
+BLOCK_REASONS = {
+    "in_progress": "Interview in progress",
+    "scheduled": "Already scheduled",
+    "completed": "Already interviewed",
+    "no_show": "Marked as no-show",
+}
+NOBODY_LEFT = "All shortlisted candidates already have an interview."
 
 
 class CandidateRequest(BaseModel):
@@ -28,9 +37,10 @@ class CandidateRequest(BaseModel):
 
 class ScheduleIntent(BaseModel):
     """What the interviewer asked for, as read by the LLM. The code validates everything."""
-    selection: Literal["all", "top_n", "names"] = Field(
-        description="all = every shortlisted candidate, top_n = the first N in rank order, "
-        "names = only the named candidates"
+    selection: Literal["all", "unscheduled", "top_n", "names"] = Field(
+        description="all = every shortlisted candidate, unscheduled = shortlisted candidates who "
+        "have no interview yet ('the rest', 'remaining', 'not scheduled yet'), "
+        "top_n = the first N in rank order, names = only the named candidates"
     )
     top_n: int | None = Field(None, description="N when selection is top_n")
     names: list[str] = Field(default_factory=list, description="Names when selection is names")
@@ -62,6 +72,18 @@ def rules_from_settings() -> Rules:
         days, time.fromisoformat(settings.office_start), time.fromisoformat(settings.office_end),
         settings.invite_email_override.strip(),
     )
+
+
+def blocked_reasons(interviews) -> dict[int, str]:
+    """candidate_id -> skip reason, from (candidate_id, status) pairs of one job's interviews."""
+    order = list(BLOCK_REASONS)
+    best: dict[int, str] = {}
+    for candidate_id, status in interviews:
+        if status in BLOCK_REASONS and (
+            candidate_id not in best or order.index(status) < order.index(best[candidate_id])
+        ):
+            best[candidate_id] = status
+    return {cid: BLOCK_REASONS[status] for cid, status in best.items()}
 
 
 class PlanQuestion(Exception):
@@ -197,7 +219,7 @@ def _item(candidate, email: str, source: str, start: datetime, minutes: int) -> 
     }
 
 
-def _plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int], busy: list,
+def _plan(intent: ScheduleIntent, shortlisted: list, blocked: dict[int, str], busy: list,
           now: datetime, rules: Rules, skipped: list) -> tuple[list[dict], str]:
     minutes = intent.duration_min or DEFAULT_DURATION_MINUTES
     if not MIN_DURATION_MINUTES <= minutes <= MAX_DURATION_MINUTES:
@@ -211,6 +233,10 @@ def _plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int], busy:
     # Who: shortlisted is in rank order, so top N is its first N
     if intent.selection == "all":
         chosen = list(shortlisted)
+    elif intent.selection == "unscheduled":
+        chosen = [c for c in shortlisted if c.id not in blocked]
+        if not chosen:
+            raise PlanQuestion(NOBODY_LEFT)
     elif intent.selection == "top_n":
         if not intent.top_n or intent.top_n < 1:
             raise PlanQuestion("How many candidates should I schedule?")
@@ -230,9 +256,9 @@ def _plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int], busy:
     entries = []
     for candidate in chosen:
         request = requests.get(candidate.id)
-        if candidate.id in active_ids:
+        if candidate.id in blocked:
             skipped.append({"candidate_id": candidate.id, "name": candidate.full_name,
-                            "reason": "Already has an active interview"})
+                            "reason": blocked[candidate.id]})
             continue
         chat_email = request.email if request else None
         if chat_email and not EMAIL_RE.match(chat_email.strip()):
@@ -244,6 +270,8 @@ def _plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int], busy:
             continue
         entries.append((candidate, request, email, source))
     if not entries:
+        if all(c.id in blocked for c in shortlisted):
+            raise PlanQuestion(NOBODY_LEFT)
         raise PlanQuestion("There is no one left to schedule.")
 
     main_day = _parse_date(intent.date, "the interviews") if intent.date else None
@@ -298,27 +326,28 @@ def _plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int], busy:
     return items, message
 
 
-def build_plan(intent: ScheduleIntent, shortlisted: list, active_ids: set[int],
+def build_plan(intent: ScheduleIntent, shortlisted: list, blocked: dict[int, str],
                busy: list[tuple[datetime, datetime]], now: datetime, rules: Rules) -> dict:
     """Plan from the intent. shortlisted: the job's shortlisted candidates in rank order;
-    active_ids: candidates of this job with an active interview; busy: active interview
-    slots of all jobs. Returns {items, skipped, message, question}."""
+    blocked: candidates of this job with a non-cancelled interview -> skip reason
+    (blocked_reasons); busy: active interview slots of all jobs.
+    Returns {items, skipped, message, question}."""
     skipped: list[dict] = []
     try:
-        items, message = _plan(intent, shortlisted, active_ids, busy, now, rules, skipped)
+        items, message = _plan(intent, shortlisted, blocked, busy, now, rules, skipped)
     except PlanQuestion as question:
         return {"items": [], "skipped": skipped, "message": None, "question": str(question)}
     return {"items": items, "skipped": skipped, "message": message, "question": None}
 
 
-def recheck_item(item: dict, shortlisted_ids: set[int], active_ids: set[int],
+def recheck_item(item: dict, shortlisted_ids: set[int], blocked: dict[int, str],
                  busy: list[tuple[datetime, datetime]], now: datetime) -> str | None:
     """Before confirming: why this planned item can no longer be scheduled, or None if it still can.
     busy: active interview slots of all jobs (plus the ones scheduled earlier in this batch)."""
     if item["candidate_id"] not in shortlisted_ids:
         return "No longer shortlisted"
-    if item["candidate_id"] in active_ids:
-        return "Already has an active interview"
+    if item["candidate_id"] in blocked:
+        return blocked[item["candidate_id"]]
     start = datetime.fromisoformat(item["start"])
     if start <= now:
         return "Start time has passed"

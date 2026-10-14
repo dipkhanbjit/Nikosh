@@ -10,6 +10,7 @@ from app.services.schedule_planner import (
     PlanQuestion,
     Rules,
     ScheduleIntent,
+    blocked_reasons,
     build_plan,
     match_name,
     name_slug,
@@ -35,9 +36,9 @@ def at(day, hour, minute=0):
     return datetime(2026, 10, day, hour, minute, tzinfo=DHAKA)
 
 
-def plan(shortlist=SHORTLIST, active=(), busy=(), **fields):
+def plan(shortlist=SHORTLIST, blocked=None, busy=(), **fields):
     fields.setdefault("selection", "all")
-    return build_plan(ScheduleIntent(**fields), shortlist, set(active), list(busy), NOW, RULES)
+    return build_plan(ScheduleIntent(**fields), shortlist, blocked or {}, list(busy), NOW, RULES)
 
 
 def starts(result):
@@ -169,9 +170,49 @@ class OverlapTest(unittest.TestCase):
 
 class SelectionTest(unittest.TestCase):
     def test_already_scheduled_is_skipped(self):
-        result = plan(date="2026-10-15", start_time="10:00", active={2})
-        self.assertEqual([s["candidate_id"] for s in result["skipped"]], [2])
+        result = plan(date="2026-10-15", start_time="10:00", blocked={2: "Already scheduled"})
+        self.assertEqual([(s["candidate_id"], s["reason"]) for s in result["skipped"]],
+                         [(2, "Already scheduled")])
         self.assertEqual(len(result["items"]), 2)
+
+    def test_unscheduled_picks_only_free_candidates(self):
+        result = plan(selection="unscheduled", date="2026-10-15", start_time="10:00",
+                      blocked={1: "Already interviewed", 3: "Marked as no-show"})
+        self.assertEqual([i["candidate_id"] for i in result["items"]], [2])
+        self.assertEqual(result["skipped"], [])
+
+    def test_unscheduled_with_nobody_left_replies(self):
+        blocked = {1: "Already interviewed", 2: "Already scheduled", 3: "Interview in progress"}
+        result = plan(selection="unscheduled", date="2026-10-15", start_time="10:00", blocked=blocked)
+        self.assertEqual(result["items"], [])
+        self.assertEqual(result["question"], "All shortlisted candidates already have an interview.")
+
+    def test_all_with_everyone_blocked_replies(self):
+        blocked = {1: "Already interviewed", 2: "Already scheduled", 3: "Marked as no-show"}
+        result = plan(date="2026-10-15", start_time="10:00", blocked=blocked)
+        self.assertEqual(result["question"], "All shortlisted candidates already have an interview.")
+        self.assertEqual(len(result["skipped"]), 3)
+
+    def test_top_n_skips_blocked_without_filling_up(self):
+        result = plan(selection="top_n", top_n=2, date="2026-10-15", start_time="10:00",
+                      blocked={1: "Already interviewed"})
+        self.assertEqual([i["candidate_id"] for i in result["items"]], [2])
+        self.assertEqual([s["candidate_id"] for s in result["skipped"]], [1])
+
+
+class BlockedReasonsTest(unittest.TestCase):
+    def test_reason_per_status(self):
+        self.assertEqual(blocked_reasons([(1, "scheduled"), (2, "in_progress"), (3, "completed"), (4, "no_show")]), {
+            1: "Already scheduled", 2: "Interview in progress", 3: "Already interviewed", 4: "Marked as no-show",
+        })
+
+    def test_cancelled_does_not_block(self):
+        self.assertEqual(blocked_reasons([(1, "cancelled")]), {})
+        self.assertEqual(blocked_reasons([(1, "cancelled"), (1, "completed")]), {1: "Already interviewed"})
+
+    def test_most_relevant_status_wins(self):
+        self.assertEqual(blocked_reasons([(1, "completed"), (1, "scheduled")]), {1: "Already scheduled"})
+        self.assertEqual(blocked_reasons([(1, "no_show"), (1, "completed")]), {1: "Already interviewed"})
 
     def test_no_email_is_skipped_unless_given_in_chat(self):
         no_email = person(4, "Jamal Hossain", None, "upload")
@@ -223,7 +264,7 @@ class EmailOverrideTest(unittest.TestCase):
     def test_plan_items_use_override(self):
         rules = Rules(RULES.working_days, RULES.office_start, RULES.office_end, OVERRIDE)
         result = build_plan(ScheduleIntent(selection="top_n", top_n=2, date="2026-10-15", start_time="10:00"),
-                            SHORTLIST, set(), [], NOW, rules)
+                            SHORTLIST, {}, [], NOW, rules)
         self.assertEqual([(i["email"], i["email_source"]) for i in result["items"]], [
             ("dipkhan870+rahim@gmail.com", "test"), ("dipkhan870+karim@gmail.com", "test"),
         ])
@@ -236,21 +277,25 @@ def item(cid=1, start=at(15, 10), minutes=30):
 
 class RecheckTest(unittest.TestCase):
     def test_still_valid(self):
-        self.assertIsNone(recheck_item(item(), {1}, set(), [], NOW))
+        self.assertIsNone(recheck_item(item(), {1}, {}, [], NOW))
 
     def test_no_longer_shortlisted(self):
-        self.assertEqual(recheck_item(item(), {2}, set(), [], NOW), "No longer shortlisted")
+        self.assertEqual(recheck_item(item(), {2}, {}, [], NOW), "No longer shortlisted")
 
     def test_already_scheduled(self):
-        self.assertEqual(recheck_item(item(), {1}, {1}, [], NOW), "Already has an active interview")
+        self.assertEqual(recheck_item(item(), {1}, {1: "Already scheduled"}, [], NOW), "Already scheduled")
+
+    def test_completed_or_no_show_blocks(self):
+        for reason in ("Already interviewed", "Marked as no-show"):
+            self.assertEqual(recheck_item(item(), {1}, {1: reason}, [], NOW), reason)
 
     def test_start_in_the_past(self):
-        self.assertEqual(recheck_item(item(), {1}, set(), [], at(15, 10)), "Start time has passed")
+        self.assertEqual(recheck_item(item(), {1}, {}, [], at(15, 10)), "Start time has passed")
 
     def test_slot_taken(self):
         busy = [(at(15, 10, 15), at(15, 10, 45))]
-        self.assertEqual(recheck_item(item(), {1}, set(), busy, NOW), "Time slot is no longer free")
+        self.assertEqual(recheck_item(item(), {1}, {}, busy, NOW), "Time slot is no longer free")
 
     def test_adjacent_slot_is_free(self):
         busy = [(at(15, 9, 30), at(15, 10))]
-        self.assertIsNone(recheck_item(item(), {1}, set(), busy, NOW))
+        self.assertIsNone(recheck_item(item(), {1}, {}, busy, NOW))
