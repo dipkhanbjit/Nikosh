@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import InterviewerRoom from "./pages/InterviewerRoom";
 import InterviewJoin from "./pages/InterviewJoin";
 import Interviews from "./pages/Interviews";
+import InterviewTranscript from "./pages/InterviewTranscript";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import JDAssistant from "./pages/JDAssistant";
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="jobs/:id/jd" element={<JDAssistant />} />
           <Route path="candidates" element={<Candidates />} />
           <Route path="interviews" element={<Interviews />} />
+          <Route path="interviews/:id/transcript" element={<InterviewTranscript />} />
           <Route path="reports" element={<Reports />} />
         </Route>
         {/* full screen, outside the app layout */}

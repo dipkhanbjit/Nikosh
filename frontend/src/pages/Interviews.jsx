@@ -152,6 +152,11 @@ export default function Interviews() {
               {iv.status === "in_progress" ? "Rejoin interview" : "Start interview"}
             </Button>
           )}
+          {["in_progress", "completed"].includes(iv.status) && (
+            <Button variant="secondary" className="px-3 py-1" onClick={() => navigate(`/interviews/${iv.id}/transcript`)}>
+              Transcript
+            </Button>
+          )}
           {iv.status === "completed" && (
             <Button variant="secondary" className="px-3 py-1" onClick={() => setRecordingsOf(iv)}>
               Recordings
