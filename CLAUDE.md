@@ -81,7 +81,7 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
   or reworded; Redmine follows the changed structure.
 - Redmine notes: 5–8 short, simple bullet sentences.
 
-## Status (13 Oct 2026)
+## Status (14 Oct 2026)
 - Modules 1–5 done and merged into main (JD agent + RAG, posting to
   Blogger/Telegram, per-job Google Forms + Drive CV collection, CV parsing
   with OCR, semantic gate Met/Partial/Unmet, weighted scoring, ranking).
@@ -138,16 +138,30 @@ evaluation project (solo, trainee 30222). Final demo: **27 Oct 2026**.
     highlights, Open CV); centre = video, controls, transcript placeholder;
     right = in-call chat (saved history, links, file sharing up to 10 MB:
     txt/pdf/doc/xls/ppt). Chat files are deleted with the candidate/job.
+- **Feature 6.4 done and merged** (Audio Capture): per-speaker mic audio
+  tagged by role, sent to the backend over WebSocket; transcriber hook
+  ready for STT.
+- **Feature 6.5 done and merged** (Connection Recovery): automatic call
+  recovery with a 30 s grace period (peer-reconnecting), ICE restart, then
+  a fresh connection; offline handling; Try again after 60 s; same session
+  on reload; chat disabled while offline.
+- **Module 6 complete** (6.1–6.5 merged into main).
 
-## Module 6 plan — During-Interview: AI-Powered Video Interview (F3)
-- 6.1 Candidate Selection & Interview Scheduling — **done**
-- 6.2 Interview Invitation & Candidate Access — **done**
-- 6.3 Video Session — **done**
-- 6.4 Audio Capture — **next** (branch `feature/6.4-audio-capture`):
-  6.4.1 per-participant mic audio tagged by role, 6.4.2 backend receives
-  audio per speaker over WebSocket (STT connected in Module 7)
-- 6.5 Connection Recovery: 6.5.1 auto-reconnect, 6.5.2 preserve session data
-- Goal: finish Module 6 on 13 Oct.
+## Module 7 plan — Live Transcription
+- 7.1 Speech-to-Text — **next** (branch `feature/7.1-speech-to-text`):
+  - 7.1.1 Deepgram streaming STT in the transcriber hook (one stream per
+    speaker, interim + final, keyterms from job/CV skills;
+    faster-whisper fallback via `TRANSCRIBER` setting)
+  - 7.1.2 Handle silence, errors, interruptions
+- 7.2 Transcript Structuring: 7.2.1 speaker-attributed, timestamped turns;
+  7.2.2 store transcript during the session
+- 7.3 Live Transcript: 7.3.1 real-time updates to the interviewer only;
+  7.3.2 chat-style live transcript panel
+- 7.4 Transcript Review: 7.4.1 retrieval API; 7.4.2 transcript view
+- 7.5 Testing: 7.5.1 test with sample interviews and fix issues
+- Settings: `DEEPGRAM_API_KEY` in `backend/.env` (secret, never commit);
+  `TRANSCRIBER=deepgram|stub|whisper`.
+- Next step: 7.1.1.
 
 ## Later (noted, not now)
 - Module 8 hiring decision: Selected / Not selected with an optional short
