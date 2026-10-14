@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Log transcript text (testing only); otherwise only counts, timing and length are logged
     transcript_log_text: bool = False
     default_application_days: int = 21
+    # Scheduling assistant rules (Asia/Dhaka)
+    working_days: str = "mon,tue,wed,thu,fri"
+    office_start: str = "09:00"
+    office_end: str = "18:00"
 
 
 @lru_cache
