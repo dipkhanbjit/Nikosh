@@ -44,3 +44,11 @@ def list_turns(interview_id: int) -> list[InterviewTranscriptTurn]:
                 .order_by(InterviewTranscriptTurn.start_s, InterviewTranscriptTurn.seq)
             )
         )
+
+
+def talk_time(turns: list[InterviewTranscriptTurn]) -> dict[str, float]:
+    """Total talk time in seconds per speaker (both speakers always present)."""
+    totals = {"interviewer": 0.0, "candidate": 0.0}
+    for turn in turns:
+        totals[turn.speaker] = totals.get(turn.speaker, 0.0) + max(turn.end_s - turn.start_s, 0.0)
+    return {speaker: round(seconds, 1) for speaker, seconds in totals.items()}

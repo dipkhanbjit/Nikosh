@@ -19,6 +19,7 @@ from app.schemas.interview import (
     InterviewUpdate,
 )
 from app.schemas.interview_audio import InterviewAudioPartOut
+from app.schemas.transcript import TranscriptOut, TranscriptTurnOut
 from app.services.audio_recorder import part_sizes
 from app.services.interviews import (
     change_status,
@@ -30,6 +31,7 @@ from app.services.interviews import (
 )
 from app.services.invitations import cancel_invitation, send_invitation
 from app.services.rooms import end_room, push_from_thread, rooms
+from app.services.transcripts import list_turns, talk_time
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +214,40 @@ def end_interview(interview_id: int, db: Session = Depends(get_db)):
         raise
     push_from_thread(interview.id, end_room, "completed")
     return _to_out(db, interview)
+
+
+# --- Transcript (7.4.1): interviewer only (the whole router is), candidates get 403
+
+
+@router.get("/{interview_id}/transcript", response_model=TranscriptOut)
+def get_transcript(interview_id: int, db: Session = Depends(get_db)):
+    """Saved closed turns so far (in_progress) or the full transcript (after the end)."""
+    interview = _get_interview(db, interview_id)
+    job = db.get(Job, interview.job_id)
+    turns = list_turns(interview.id)
+    logger.info("Transcript read: interview=%s turns=%d", interview.id, len(turns))
+    return TranscriptOut(
+        interview_id=interview.id,
+        status=interview.status,
+        candidate_name=interview.candidate.full_name,
+        job_title=job.title,
+        started_at=interview.started_at,
+        ended_at=interview.ended_at,
+        turn_count=len(turns),
+        talk_time_s=talk_time(turns),
+        turns=[
+            TranscriptTurnOut(
+                seq=t.seq,
+                speaker=t.speaker,
+                text=t.text,
+                start_s=t.start_s,
+                end_s=t.end_s,
+                confidence=t.confidence,
+                incomplete=t.incomplete,
+            )
+            for t in turns
+        ],
+    )
 
 
 # --- Recorded audio (6.4.2): interviewer only (the whole router is), candidates get 403
