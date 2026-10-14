@@ -2,6 +2,7 @@
 
 Usage (from backend/, or inside the backend container):
     python -m app.scripts.transcribe_wav storage/interview_audio/<interview_id>/<role>_part<N>.wav
+    [--simulate-drop <seconds>]  # force-close the Deepgram stream once at that point of the audio
 """
 
 import argparse
@@ -18,7 +19,7 @@ from app.core.database import SessionLocal
 from app.models import InterviewAudioPart
 from app.services.audio import BYTES_PER_SECOND
 from app.services.deepgram_stt import DeepgramTranscriber
-from app.services.transcription import TranscriptEvent
+from app.services.transcription import TranscriptEvent, TranscriptStatus
 
 CHUNK_BYTES = BYTES_PER_SECOND // 10  # 100 ms, like the browser
 PART_NAME = re.compile(r"^(interviewer|candidate)_part(\d+)\.wav$")
@@ -40,13 +41,17 @@ def _start_offset(interview_id: int, role: str, part_no: int) -> float:
     return offset or 0.0
 
 
-async def _print_final(event: TranscriptEvent) -> None:
-    if event.is_final:
+async def _print_final(event: TranscriptEvent | TranscriptStatus) -> None:
+    if isinstance(event, TranscriptStatus):
+        print(f"-- transcription {event.state}", flush=True)
+    elif event.is_final:
         conf = f"{event.confidence:.2f}" if event.confidence is not None else "-"
+        if event.incomplete:
+            conf += ", incomplete"
         print(f"[{_clock(event.start_s)}-{_clock(event.end_s)}] {event.role}: {event.text} ({conf})", flush=True)
 
 
-async def main(path: Path) -> None:
+async def main(path: Path, drop_at: float | None) -> None:
     match = PART_NAME.match(path.name)
     if not match or not path.parent.name.isdigit():
         sys.exit("Expected a path like storage/interview_audio/<interview_id>/<role>_part<N>.wav")
@@ -67,6 +72,10 @@ async def main(path: Path) -> None:
         # wait until the chunk has "arrived", as in a live interview
         end = (pos + len(chunk)) / BYTES_PER_SECOND
         await asyncio.sleep(max(t0 + end - loop.time(), 0))
+        if drop_at is not None and end >= drop_at:
+            drop_at = None
+            print(f"-- simulating a Deepgram drop at {_clock(offset + end)}", flush=True)
+            await transcriber.simulate_drop()
         await transcriber.feed(chunk, offset + end)
     await transcriber.stop()
 
@@ -76,4 +85,8 @@ if __name__ == "__main__":
     logging.getLogger("websockets").setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("path", type=Path, help="WAV part from storage/interview_audio")
-    asyncio.run(main(parser.parse_args().path))
+    parser.add_argument(
+        "--simulate-drop", type=float, metavar="SECONDS", help="force-close the Deepgram stream once at this point"
+    )
+    args = parser.parse_args()
+    asyncio.run(main(args.path, args.simulate_drop))

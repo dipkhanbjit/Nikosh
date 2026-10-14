@@ -24,12 +24,22 @@ class TranscriptEvent:
     start_s: float
     end_s: float
     confidence: float | None = None
+    incomplete: bool = False  # the last interim text of a stream that dropped, kept as a final
 
 
-OnEvent = Callable[[TranscriptEvent], Awaitable[None]]
+@dataclass
+class TranscriptStatus:
+    """Transcription state of one speaker, sent when it changes: active / reconnecting / unavailable."""
+
+    interview_id: int
+    role: str
+    state: str
 
 
-async def _ignore_event(event: TranscriptEvent) -> None:
+OnEvent = Callable[[TranscriptEvent | TranscriptStatus], Awaitable[None]]
+
+
+async def _ignore_event(event: TranscriptEvent | TranscriptStatus) -> None:
     pass
 
 
@@ -42,6 +52,7 @@ class Transcriber:
         self.interview_id = interview_id
         self.role = role
         self.on_event = on_event
+        self.state = "active"  # "unavailable" = failed for good; the stream then switches to the stub
 
     async def feed(self, chunk: bytes, offset_s: float) -> None:
         """LINEAR16 16 kHz mono chunk; offset_s = seconds since the interview started_at."""
@@ -106,27 +117,34 @@ class TranscriptionStream:
             await self.engine.start(self.interview_id, self.role, self._on_event)
         except Exception as exc:
             logger.warning(
-                "Interview %s: %s transcriber could not start for %s (%s), using the stub",
+                "Interview %s: %s transcriber could not start for %s (%s: %s), using the stub",
                 self.interview_id,
                 type(self.engine).__name__,
                 self.role,
                 type(exc).__name__,
+                exc,
             )
             self.engine = StubTranscriber()
             await self.engine.start(self.interview_id, self.role, self._on_event)
+            await self._on_event(TranscriptStatus(self.interview_id, self.role, "unavailable"))
         self._task = asyncio.create_task(self._consume())
         logger.info(
             "Interview %s: transcriber %s started for %s", self.interview_id, type(self.engine).__name__, self.role
         )
 
-    async def _on_event(self, event: TranscriptEvent) -> None:
-        """For now only logs; 7.2 stores the events and 7.3 sends them to the interviewer.
-        The text itself is logged only with TRANSCRIPT_LOG_TEXT=true."""
+    async def _on_event(self, event: TranscriptEvent | TranscriptStatus) -> None:
+        """For now only logs; 7.2 stores the events and 7.3 sends them (and the status) to the
+        interviewer. The text itself is logged only with TRANSCRIPT_LOG_TEXT=true."""
+        if isinstance(event, TranscriptStatus):
+            logger.info("Interview %s: %s transcription is %s", self.interview_id, self.role, event.state)
+            return
         if not event.is_final:
             self._interim += 1
             return
         self._finals += 1
         conf = f"{event.confidence:.2f}" if event.confidence is not None else "-"
+        if event.incomplete:
+            conf += ", incomplete"
         if settings.transcript_log_text:
             logger.info(
                 "Interview %s: %s final %.1f-%.1f s (conf %s): %s",
@@ -151,10 +169,22 @@ class TranscriptionStream:
             item = await self._queue.get()
             if item is None:
                 return
+            if self.engine.state == "unavailable":
+                await self._use_stub()
             try:
                 await self.engine.feed(*item)
             except Exception:
                 logger.exception("Interview %s: %s transcriber feed failed", self.interview_id, self.role)
+
+    async def _use_stub(self) -> None:
+        """The engine failed for good: the stub counts the audio for the rest of the session."""
+        try:
+            await self.engine.stop()
+        except Exception:
+            logger.exception("Interview %s: %s transcriber stop failed", self.interview_id, self.role)
+        self.engine = StubTranscriber()
+        await self.engine.start(self.interview_id, self.role, self._on_event)
+        logger.info("Interview %s: %s transcriber switched to the stub", self.interview_id, self.role)
 
     async def stop(self) -> None:
         if self._task:
