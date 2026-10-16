@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { getCVText, listCandidates } from "../api/candidates";
 import {
@@ -37,6 +38,7 @@ const pillColor = (score) =>
       : "bg-red-100 text-red-700";
 
 export default function Candidates() {
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [jobId, setJobId] = useState("");
   const [shortlist, setShortlist] = useState(null);
@@ -275,7 +277,16 @@ export default function Candidates() {
         const iv = interviewOf(i.candidate_id);
         const active = iv && ACTIVE_INTERVIEW_STATUSES.includes(iv.status);
         return (
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {iv?.status === "completed" && (
+              <Button
+                variant="secondary"
+                className="px-3 py-1"
+                onClick={() => navigate(`/candidates/${i.candidate_id}/assessment?interview=${iv.id}`)}
+              >
+                Assessment
+              </Button>
+            )}
             <Button
               className="px-3 py-1"
               onClick={() => openSchedule(i)}

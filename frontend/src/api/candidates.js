@@ -32,3 +32,6 @@ export const includeCandidate = (id, reason) =>
 
 export const excludeCandidate = (id, reason) =>
   apiRequest(`/candidates/${id}/exclude`, { method: "POST", body: { reason } });
+
+export const getAssessment = (id) => apiRequest(`/candidates/${id}/assessment`);
+export const runAssessment = (id) => apiRequest(`/candidates/${id}/assessment`, { method: "POST" });

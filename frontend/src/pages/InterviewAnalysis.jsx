@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { formatClock, formatDateTime, getAnalysis, getInterview, runAnalysis } from "../api/interviews";
 import { Alert, Badge, Button, Card, Modal, PageHeader, Spinner } from "../components/ui";
@@ -172,6 +172,7 @@ function RequirementRow({ mapping }) {
 export default function InterviewAnalysis() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { hash } = useLocation();
   const [interview, setInterview] = useState(null);
   const [analysis, setAnalysis] = useState(undefined); // undefined = loading, null = never run
   const [error, setError] = useState(null); // { status, message }: page cannot load
@@ -207,6 +208,13 @@ export default function InterviewAnalysis() {
     return () => clearInterval(timer);
   }, [active, id]);
 
+  // Citation links from the assessment page (#pair-N): scroll once the result is shown
+  const resultShown = Boolean(interview) && analysis?.status === "completed";
+  useEffect(() => {
+    const match = hash.match(/^#pair-(\d+)$/);
+    if (resultShown && match) scrollToPair(match[1]);
+  }, [hash, resultShown]);
+
   const start = () => {
     setConfirmOpen(false);
     setActionError(null);
@@ -222,6 +230,14 @@ export default function InterviewAnalysis() {
       title="Interview analysis"
       actions={
         <>
+          {resultShown && analysis.overall?.score != null && (
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/candidates/${interview.candidate_id}/assessment?interview=${id}`)}
+            >
+              Assessment
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => navigate(`/interviews/${id}/transcript`)}>
             View transcript
           </Button>

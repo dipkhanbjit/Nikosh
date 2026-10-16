@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./layouts/AppLayout";
+import CandidateAssessment from "./pages/CandidateAssessment";
 import CandidateHome from "./pages/CandidateHome";
 import CandidateRoom from "./pages/CandidateRoom";
 import Candidates from "./pages/Candidates";
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="jobs/:id" element={<JobDetail />} />
           <Route path="jobs/:id/jd" element={<JDAssistant />} />
           <Route path="candidates" element={<Candidates />} />
+          <Route path="candidates/:id/assessment" element={<CandidateAssessment />} />
           <Route path="interviews" element={<Interviews />} />
           <Route path="interviews/:id/transcript" element={<InterviewTranscript />} />
           <Route path="interviews/:id/analysis" element={<InterviewAnalysis />} />
