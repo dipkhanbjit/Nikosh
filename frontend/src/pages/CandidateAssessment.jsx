@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { getAssessment, runAssessment } from "../api/candidates";
+import { getAssessment, reportUrl, runAssessment } from "../api/candidates";
 import { formatClock, formatDateTime, getInterview } from "../api/interviews";
 import { Alert, Badge, Button, Card, Modal, PageHeader, Spinner, Table } from "../components/ui";
 
@@ -168,9 +168,23 @@ function FindingsCard({ title, items, interviewId }) {
   );
 }
 
-function ScoreCard({ score, recommendation, interviewId }) {
+function ExportActions({ candidateId }) {
   return (
-    <Card title="Final score">
+    <div className="flex gap-2">
+      {/* Served as an attachment, so the page stays open */}
+      <Button variant="secondary" onClick={() => window.location.assign(reportUrl(candidateId, { download: true }))}>
+        Download HTML
+      </Button>
+      <Button variant="secondary" onClick={() => window.open(reportUrl(candidateId, { print: true }), "_blank")}>
+        Print / Save as PDF
+      </Button>
+    </div>
+  );
+}
+
+function ScoreCard({ score, recommendation, interviewId, candidateId }) {
+  return (
+    <Card title="Final score" actions={<ExportActions candidateId={candidateId} />}>
       <div className="flex flex-wrap items-end gap-8">
         <Figure label="Final score" value={score.final} large />
         <div className="flex gap-2 pb-1">
@@ -333,6 +347,10 @@ export default function CandidateAssessment() {
         </dl>
       </Card>
 
+      {assessment && !hasResult && (
+        <p className="text-sm text-gray-500">Export is available after the assessment has completed.</p>
+      )}
+
       {actionError && (
         <Alert type="error">
           {actionError.message}
@@ -382,6 +400,7 @@ export default function CandidateAssessment() {
               score={assessment.score}
               recommendation={findings.recommendation}
               interviewId={assessment.interview_id}
+              candidateId={id}
             />
           )}
 

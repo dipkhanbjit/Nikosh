@@ -35,3 +35,12 @@ export const excludeCandidate = (id, reason) =>
 
 export const getAssessment = (id) => apiRequest(`/candidates/${id}/assessment`);
 export const runAssessment = (id) => apiRequest(`/candidates/${id}/assessment`, { method: "POST" });
+
+// Standalone HTML report (opened or downloaded directly; the cookie authenticates it)
+export const reportUrl = (id, { download = false, print = false } = {}) => {
+  const params = new URLSearchParams();
+  if (download) params.set("download", "true");
+  if (print) params.set("print", "true");
+  const query = params.toString();
+  return `/api/v1/candidates/${id}/report.html${query ? `?${query}` : ""}`;
+};

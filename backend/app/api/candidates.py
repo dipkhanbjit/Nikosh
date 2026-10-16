@@ -3,15 +3,15 @@ import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
 from app.core.database import SessionLocal, get_db
 from app.core.exceptions import AppException
-from app.models import Candidate, DeletedApplication, Job
+from app.models import Candidate, DeletedApplication, Interview, InterviewAnalysis, Job
 from app.schemas.candidate import (
     CandidateOut,
     CandidateText,
@@ -35,6 +35,7 @@ from app.services.audio_recorder import delete_interview_audio
 from app.services.interview_chat import delete_interview_files
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.ranking import ranked_candidates
+from app.services.report import render_report, report_filename
 from app.services.screening_runs import execute_run, latest_run, start_screening
 from app.services.storage import delete_file
 
@@ -218,6 +219,43 @@ def get_candidate_assessment(candidate_id: int, db: Session = Depends(get_db)):
     if assessment is None:
         raise AppException("This candidate has not been assessed yet", 404, "ASSESSMENT_NOT_FOUND")
     return _assessment_out(db, assessment)
+
+
+@router.get("/{candidate_id}/report.html", response_class=HTMLResponse)
+def get_candidate_report(candidate_id: int, download: bool = False,
+                         print_on_load: bool = Query(False, alias="print"), db: Session = Depends(get_db)):
+    """Standalone HTML report of the completed assessment (8.6.1); the browser prints it or saves it as PDF."""
+    candidate = _get_candidate(db, candidate_id)
+    assessment = get_assessment(db, candidate.id)
+    if assessment is None:
+        raise AppException("This candidate has not been assessed yet", 404, "ASSESSMENT_NOT_FOUND")
+    if assessment.status != "completed":
+        raise AppException("The assessment has not completed", 409, "ASSESSMENT_NOT_COMPLETED")
+
+    interview = db.get(Interview, assessment.interview_id) if assessment.interview_id else None
+    analysis = None
+    if interview:
+        analysis = db.scalar(select(InterviewAnalysis).where(InterviewAnalysis.interview_id == interview.id))
+    job = db.get(Job, candidate.job_id)
+    generated_at = datetime.now(timezone.utc)
+    html = render_report(
+        candidate_name=candidate.full_name,
+        job_title=job.title if job else None,
+        interview_date=(interview.started_at or interview.scheduled_at) if interview else None,
+        generated_at=generated_at,
+        score=assessment.score or {},
+        requirements=assessment.requirements,
+        findings=assessment.findings,
+        pairs=analysis.pairs if analysis else None,
+        evaluations=analysis.evaluations if analysis else None,
+        outdated=is_outdated(assessment, latest_interview_analysis(db, candidate.id)[1]),
+        print_on_load=print_on_load,
+    )
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{report_filename(candidate.full_name, generated_at)}"'
+    logger.info("Assessment report generated for candidate %s (download=%s)", candidate.id, download)
+    return HTMLResponse(html, headers=headers)
 
 
 @router.delete("/{candidate_id}", status_code=204)
