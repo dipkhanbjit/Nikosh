@@ -20,6 +20,14 @@ from app.schemas.candidate import (
     OverrideRequest,
     ScreeningRunOut,
 )
+from app.schemas.candidate_assessment import CandidateAssessmentOut
+from app.services.candidate_assessments import (
+    execute_assessment,
+    get_assessment,
+    is_outdated,
+    latest_interview_analysis,
+    start_assessment,
+)
 from app.services.candidate_scoring import score_candidate
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
@@ -182,6 +190,34 @@ def view_cv(candidate_id: int, db: Session = Depends(get_db)):
         filename=candidate.cv_filename,
         content_disposition_type="inline",
     )
+
+
+# --- Consolidated assessment (8.5.1): CV screening + CV score + interview analysis
+
+
+def _assessment_out(db: Session, assessment) -> CandidateAssessmentOut:
+    out = CandidateAssessmentOut.model_validate(assessment, from_attributes=True)
+    if assessment.status == "completed":
+        out.outdated = is_outdated(assessment, latest_interview_analysis(db, assessment.candidate_id)[1])
+    return out
+
+
+@router.post("/{candidate_id}/assessment", response_model=CandidateAssessmentOut, status_code=202)
+def start_candidate_assessment(candidate_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Run the assessment workflow in the background (a re-run replaces the old result); poll with GET."""
+    candidate = _get_candidate(db, candidate_id)
+    assessment = start_assessment(db, candidate)
+    background_tasks.add_task(execute_assessment, candidate.id, assessment.version)
+    return _assessment_out(db, assessment)
+
+
+@router.get("/{candidate_id}/assessment", response_model=CandidateAssessmentOut)
+def get_candidate_assessment(candidate_id: int, db: Session = Depends(get_db)):
+    candidate = _get_candidate(db, candidate_id)
+    assessment = get_assessment(db, candidate.id)
+    if assessment is None:
+        raise AppException("This candidate has not been assessed yet", 404, "ASSESSMENT_NOT_FOUND")
+    return _assessment_out(db, assessment)
 
 
 @router.delete("/{candidate_id}", status_code=204)
