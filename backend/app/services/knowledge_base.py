@@ -13,6 +13,7 @@ from app.models.knowledge import KBChunk, KBDocument
 from app.services.document_parser import extract_text
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+DOCUMENT_KINDS = {"company", "reference"}
 
 
 @lru_cache
@@ -30,8 +31,14 @@ def chunk_text(text: str) -> list[str]:
 
 
 def ingest_document(
-    db: Session, filename: str, data: bytes, uploaded_by: int | None = None
+    db: Session,
+    filename: str,
+    data: bytes,
+    uploaded_by: int | None = None,
+    kind: str = "company",
 ) -> KBDocument:
+    if kind not in DOCUMENT_KINDS:
+        raise AppException("Invalid document type", 400, "INVALID_KIND")
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
         raise AppException("Unsupported file type", 400, "UNSUPPORTED_FILE_TYPE")
     if len(data) > settings.kb_max_file_mb * 1024 * 1024:
@@ -53,6 +60,7 @@ def ingest_document(
         filename=filename,
         content_hash=content_hash,
         chunk_count=len(chunks),
+        kind=kind,
         uploaded_by=uploaded_by,
     )
     doc.chunks = [
@@ -65,21 +73,22 @@ def ingest_document(
     return doc
 
 
-def search(db: Session, query: str, k: int = 5) -> list[dict]:
+def search(db: Session, query: str, k: int = 5, kind: str | None = None) -> list[dict]:
     query_vec = next(iter(get_embedder().query_embed(query))).tolist()
     distance = KBChunk.embedding.cosine_distance(query_vec)
-    rows = db.execute(
-        select(KBChunk, KBDocument.filename, distance.label("distance"))
-        .join(KBDocument)
-        .order_by(distance)
-        .limit(k)
-    ).all()
+    stmt = select(
+        KBChunk, KBDocument.filename, KBDocument.kind, distance.label("distance")
+    ).join(KBDocument)
+    if kind:
+        stmt = stmt.where(KBDocument.kind == kind)
+    rows = db.execute(stmt.order_by(distance).limit(k)).all()
     return [
         {
             "content": chunk.content,
             "source": filename,
+            "kind": doc_kind,
             "chunk_index": chunk.chunk_index,
             "score": round(1 - dist, 4),
         }
-        for chunk, filename, dist in rows
+        for chunk, filename, doc_kind, dist in rows
     ]

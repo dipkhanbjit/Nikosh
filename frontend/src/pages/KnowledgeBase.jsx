@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 
-import { ACCEPTED_TYPES, deleteDocument, listDocuments, uploadDocument } from "../api/knowledge";
-import { Alert, Button, Modal, PageHeader, Spinner, Table } from "../components/ui";
+import {
+  ACCEPTED_TYPES,
+  DOCUMENT_KINDS,
+  deleteDocument,
+  listDocuments,
+  uploadDocument,
+} from "../api/knowledge";
+import { Alert, Badge, Button, Modal, PageHeader, Spinner, Table } from "../components/ui";
 
 export default function KnowledgeBase() {
   const fileInput = useRef(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [kind, setKind] = useState("company");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [deletingDoc, setDeletingDoc] = useState(null);
@@ -34,7 +41,7 @@ export default function KnowledgeBase() {
 
     for (const file of files) {
       try {
-        const doc = await uploadDocument(file);
+        const doc = await uploadDocument(file, kind);
         if (documents.some((d) => d.id === doc.id) || added.some((d) => d.id === doc.id)) {
           skipped.push(file.name);
         } else {
@@ -67,6 +74,14 @@ export default function KnowledgeBase() {
 
   const columns = [
     { key: "filename", label: "Document", render: (d) => <span className="font-medium text-gray-800">{d.filename}</span> },
+    {
+      key: "kind",
+      label: "Type",
+      render: (d) => {
+        const k = DOCUMENT_KINDS[d.kind] ?? DOCUMENT_KINDS.company;
+        return <Badge color={k.color}>{k.label}</Badge>;
+      },
+    },
     { key: "chunk_count", label: "Chunks" },
     { key: "created_at", label: "Uploaded", render: (d) => new Date(d.created_at).toLocaleString() },
     {
@@ -86,11 +101,29 @@ export default function KnowledgeBase() {
     <div>
       <PageHeader
         title="Knowledge Base"
-        subtitle="Company documents used by the AI to generate job descriptions."
+        subtitle="Company documents for job descriptions and reference material for verifying interview answers."
         actions={
-          <Button onClick={() => fileInput.current.click()} loading={uploading}>
-            {uploading ? "Processing…" : "Upload Documents"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <label htmlFor="kind" className="text-sm font-medium text-gray-700">
+              Document type
+            </label>
+            <select
+              id="kind"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+              disabled={uploading}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {Object.entries(DOCUMENT_KINDS).map(([value, { label }]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <Button onClick={() => fileInput.current.click()} loading={uploading}>
+              {uploading ? "Processing…" : "Upload Documents"}
+            </Button>
+          </div>
         }
       />
       <input
@@ -122,7 +155,7 @@ export default function KnowledgeBase() {
           <Spinner size="lg" />
         </div>
       ) : (
-        <Table columns={columns} data={documents} emptyMessage="No documents yet. Upload company documents to get started." />
+        <Table columns={columns} data={documents} emptyMessage="No documents yet. Upload company or reference documents to get started." />
       )}
 
       <Modal
@@ -142,7 +175,8 @@ export default function KnowledgeBase() {
       >
         <p className="text-sm text-gray-700">
           Delete <span className="font-semibold">{deletingDoc?.filename}</span>? Its content will no
-          longer be used for JD generation. Existing JDs are not affected.
+          longer be used for JD generation or answer verification. Existing JDs are not
+          affected.
         </p>
       </Modal>
     </div>

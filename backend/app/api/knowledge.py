@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile
+from fastapi import APIRouter, Depends, Form, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,10 +16,11 @@ interviewer_only = require_role("interviewer")
 @router.post("/documents", response_model=KBDocumentOut, status_code=201)
 def upload_document(
     file: UploadFile,
+    kind: str = Form("company"),
     db: Session = Depends(get_db),
     user: User = Depends(interviewer_only),
 ):
-    return ingest_document(db, file.filename, file.file.read(), user.id)
+    return ingest_document(db, file.filename, file.file.read(), user.id, kind)
 
 
 @router.get(

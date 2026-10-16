@@ -8,5 +8,6 @@ class KBDocumentOut(BaseModel):
 
     id: int
     filename: str
+    kind: str
     chunk_count: int
     created_at: datetime
