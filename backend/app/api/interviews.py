@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,9 +18,11 @@ from app.schemas.interview import (
     InterviewOut,
     InterviewUpdate,
 )
+from app.schemas.interview_analysis import InterviewAnalysisOut
 from app.schemas.interview_audio import InterviewAudioPartOut
 from app.schemas.transcript import TranscriptOut, TranscriptTurnOut
 from app.services.audio_recorder import part_sizes
+from app.services.interview_analyses import execute_analysis, get_analysis, start_analysis
 from app.services.interviews import (
     change_status,
     create_interview,
@@ -236,6 +238,31 @@ def get_transcript(interview_id: int, db: Session = Depends(get_db)):
             for t in turns
         ],
     )
+
+
+# --- Interview analysis (8.4.1): interviewer only (the whole router is)
+
+
+def _analysis_out(analysis) -> InterviewAnalysisOut:
+    return InterviewAnalysisOut.model_validate(analysis, from_attributes=True)
+
+
+@router.post("/{interview_id}/analysis", response_model=InterviewAnalysisOut, status_code=202)
+def start_interview_analysis(interview_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Run the analysis workflow in the background (a re-run replaces the old result); poll with GET."""
+    interview = _get_interview(db, interview_id)
+    analysis = start_analysis(db, interview)
+    background_tasks.add_task(execute_analysis, interview.id, analysis.version)
+    return _analysis_out(analysis)
+
+
+@router.get("/{interview_id}/analysis", response_model=InterviewAnalysisOut)
+def get_interview_analysis(interview_id: int, db: Session = Depends(get_db)):
+    interview = _get_interview(db, interview_id)
+    analysis = get_analysis(db, interview.id)
+    if analysis is None:
+        raise AppException("This interview has not been analysed yet", 404, "ANALYSIS_NOT_FOUND")
+    return _analysis_out(analysis)
 
 
 # --- Recorded audio (6.4.2): interviewer only (the whole router is), candidates get 403
