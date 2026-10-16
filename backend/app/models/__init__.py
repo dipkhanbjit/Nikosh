@@ -1,4 +1,5 @@
 from app.models.candidate import Candidate
+from app.models.candidate_assessment import CandidateAssessment
 from app.models.deleted_application import DeletedApplication
 from app.models.interview import Interview
 from app.models.interview_analysis import InterviewAnalysis
@@ -14,6 +15,7 @@ __all__ = [
     "User",
     "Job",
     "Candidate",
+    "CandidateAssessment",
     "DeletedApplication",
     "Interview",
     "InterviewAnalysis",
