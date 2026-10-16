@@ -66,6 +66,19 @@ export const audioPartUrl = (id, partId) => `/api/v1/interviews/${id}/audio/${pa
 // Transcript (7.4)
 export const getTranscript = (id) => apiRequest(`/interviews/${id}/transcript`);
 
+// Analysis (8.4): POST starts a run in the background, GET is polled for the result
+export const getAnalysis = (id) => apiRequest(`/interviews/${id}/analysis`);
+export const runAnalysis = (id) => apiRequest(`/interviews/${id}/analysis`, { method: "POST" });
+
+// 312.4 → "05:12"; one hour or more → "1:02:05"
+export const formatClock = (seconds) => {
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const h = Math.floor(total / 3600);
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  const ss = String(total % 60).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+};
+
 // 312.4 → "5m 12s"; one hour or more → "1h 02m 05s"
 export const formatDuration = (seconds) => {
   const total = Math.max(0, Math.round(seconds || 0));

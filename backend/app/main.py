@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging_config import setup_logging
 from app.services.form_status import form_check_loop
+from app.services.interview_analyses import mark_interrupted_analyses
 from app.services.interviews import no_show_check_loop
 from app.services.screening_runs import mark_interrupted_runs
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mark_interrupted_runs()
+    mark_interrupted_analyses()
     task = asyncio.create_task(form_check_loop())
     no_show_task = asyncio.create_task(no_show_check_loop())
     logger.info("%s started (env=%s)", settings.app_name, settings.app_env)

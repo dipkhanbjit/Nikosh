@@ -158,6 +158,11 @@ export default function Interviews() {
             </Button>
           )}
           {iv.status === "completed" && (
+            <Button variant="secondary" className="px-3 py-1" onClick={() => navigate(`/interviews/${iv.id}/analysis`)}>
+              Analysis
+            </Button>
+          )}
+          {iv.status === "completed" && (
             <Button variant="secondary" className="px-3 py-1" onClick={() => setRecordingsOf(iv)}>
               Recordings
             </Button>
