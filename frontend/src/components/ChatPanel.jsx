@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Button, Spinner } from "./ui";
+import { Alert, Button, Spinner } from "./ui";
 
-export default function ChatPanel({ messages, onSend, loading, disabled, placeholder, emptyText }) {
+// Optional: m.sources is shown under a message; error is shown inline below the messages
+export default function ChatPanel({ messages, onSend, loading, disabled, placeholder, emptyText, error }) {
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, error]);
 
   const send = () => {
     const value = text.trim();
@@ -38,6 +39,11 @@ export default function ChatPanel({ messages, onSend, loading, disabled, placeho
               }`}
             >
               {m.content}
+              {m.sources?.length > 0 && (
+                <p className="mt-2 border-t border-gray-200 pt-1.5 text-xs text-gray-500">
+                  Sources: {m.sources.join(", ")}
+                </p>
+              )}
             </div>
           </div>
         ))}
@@ -46,6 +52,7 @@ export default function ChatPanel({ messages, onSend, loading, disabled, placeho
             <Spinner size="sm" /> Generating…
           </div>
         )}
+        {error && !loading && <Alert type="error">{error}</Alert>}
         <div ref={bottomRef} />
       </div>
 

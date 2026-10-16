@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { cvUrl, getCVText } from "../../api/candidates";
 import { ProfileView } from "../CandidateProfileModal";
 import { Alert, Badge, Button, Spinner } from "../ui";
-import { SparkIcon } from "./icons";
+import AssistantTab from "./AssistantTab";
 
 const TABS = ["AI Assistant", "Candidate"];
 const TOP_SKILLS = 8;
@@ -134,21 +134,8 @@ function CandidateTab({ candidateId }) {
   );
 }
 
-// Kept for the Interviewer AI Assistant chat (F8): ChatPanel goes here
-function AssistantPlaceholder() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
-        <SparkIcon className="h-6 w-6" />
-      </span>
-      <p className="text-sm font-medium text-gray-700">Interviewer AI Assistant</p>
-      <p className="text-xs text-gray-500">Coming in F8</p>
-    </div>
-  );
-}
-
-// Interviewer-only left panel: AI Assistant (F8) and candidate details / CV
-export default function InterviewerPanel({ candidateId }) {
+// Interviewer-only left panel: AI Assistant (co-pilot) and candidate details / CV
+export default function InterviewerPanel({ interviewId, candidateId }) {
   const [tab, setTab] = useState("Candidate");
 
   return (
@@ -167,9 +154,9 @@ export default function InterviewerPanel({ candidateId }) {
           </button>
         ))}
       </div>
-      {/* both tabs stay mounted so the CV is not reloaded when switching */}
+      {/* both tabs stay mounted so the CV and the co-pilot chat survive switching */}
       <div className={`min-h-0 flex-1 flex-col ${tab === "AI Assistant" ? "flex" : "hidden"}`}>
-        <AssistantPlaceholder />
+        <AssistantTab interviewId={interviewId} />
       </div>
       <div className={`min-h-0 flex-1 flex-col ${tab === "Candidate" ? "flex" : "hidden"}`}>
         <CandidateTab candidateId={candidateId} />
