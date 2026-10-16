@@ -51,10 +51,7 @@ def create_job(
     user: User = Depends(interviewer_only),
 ):
     ensure_unique_title(db, payload.title)
-    data = payload.model_dump()
-    deadline = data.pop("application_deadline")
-    job = Job(**data, created_by=user.id)
-    job.application_deadline = end_of_day(deadline) if deadline else None
+    job = Job(title=payload.title, created_by=user.id)
     db.add(job)
     db.commit()
     db.refresh(job)

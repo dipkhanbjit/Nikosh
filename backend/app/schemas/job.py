@@ -39,14 +39,9 @@ class Requirement(BaseModel):
 
 
 class JobCreate(BaseModel):
+    """Only the position; the JD Assistant fills the other fields."""
+
     title: str = Field(min_length=1, max_length=255)
-    department: str | None = Field(default=None, max_length=100)
-    location: str | None = Field(default=None, max_length=100)
-    employment_type: EmploymentType = "full_time"
-    min_experience_years: int | None = Field(default=None, ge=0, le=50)
-    description: str | None = None
-    requirements: list[Requirement] = []
-    application_deadline: date | None = None
 
 
 class JobUpdate(BaseModel):

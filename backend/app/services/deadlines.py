@@ -6,6 +6,11 @@ from app.models import Job
 DHAKA = timezone(timedelta(hours=6))
 
 
+def today() -> date:
+    """Today's date in Dhaka."""
+    return datetime.now(DHAKA).date()
+
+
 def end_of_day(day: date) -> datetime:
     """Deadline is the last second of the chosen day, Dhaka time."""
     return datetime.combine(day, time(23, 59, 59), tzinfo=DHAKA)

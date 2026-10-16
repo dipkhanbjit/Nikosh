@@ -1,36 +1,25 @@
 import { useEffect, useState } from "react";
 
-import { createJob, deadlineInputValue, EMPLOYMENT_TYPES, updateJob } from "../api/jobs";
+import { createJob, deadlineInputValue, updateJob } from "../api/jobs";
 import { Alert, Button, Input, Modal } from "./ui";
 
-const EMPTY = {
-  title: "",
-  department: "",
-  location: "",
-  employment_type: "full_time",
-  min_experience_years: "",
-  application_deadline: "",
-};
+const EMPTY = { title: "", application_deadline: "" };
 
+// The JD Assistant fills the other profile fields. Only a posted job shows the
+// deadline here, so it can be extended (or the form reopened) after posting.
 export default function JobFormModal({ open, job, onClose, onSaved }) {
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const isEdit = Boolean(job);
+  const showDeadline = job?.status === "posted";
 
   useEffect(() => {
     if (!open) return;
     setError("");
     setForm(
       job
-        ? {
-            title: job.title,
-            department: job.department ?? "",
-            location: job.location ?? "",
-            employment_type: job.employment_type,
-            min_experience_years: job.min_experience_years ?? "",
-            application_deadline: deadlineInputValue(job.application_deadline),
-          }
+        ? { title: job.title, application_deadline: deadlineInputValue(job.application_deadline) }
         : EMPTY
     );
   }, [open, job]);
@@ -41,15 +30,8 @@ export default function JobFormModal({ open, job, onClose, onSaved }) {
     e.preventDefault();
     setSaving(true);
     setError("");
-    const body = {
-      title: form.title.trim(),
-      department: form.department.trim() || null,
-      location: form.location.trim() || null,
-      employment_type: form.employment_type,
-      min_experience_years:
-        form.min_experience_years === "" ? null : Number(form.min_experience_years),
-      application_deadline: form.application_deadline || null,
-    };
+    const body = { title: form.title.trim() };
+    if (showDeadline) body.application_deadline = form.application_deadline || null;
     try {
       const saved = isEdit ? await updateJob(job.id, body) : await createJob(body);
       onSaved(saved);
@@ -63,7 +45,7 @@ export default function JobFormModal({ open, job, onClose, onSaved }) {
   return (
     <Modal
       open={open}
-      title={isEdit ? "Edit Job Profile" : "New Job Profile"}
+      title={isEdit ? "Edit Job" : "New Job"}
       onClose={onClose}
       footer={
         <>
@@ -79,71 +61,34 @@ export default function JobFormModal({ open, job, onClose, onSaved }) {
       <form id="job-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert type="error">{error}</Alert>}
         <Input
-          label="Job Title"
+          label="Job Position"
           name="title"
           value={form.title}
           onChange={handleChange}
           placeholder="e.g. Senior Backend Engineer"
           required
         />
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Department"
-            name="department"
-            value={form.department}
-            onChange={handleChange}
-            placeholder="e.g. Engineering"
-          />
-          <Input
-            label="Location"
-            name="location"
-            value={form.location}
-            onChange={handleChange}
-            placeholder="e.g. Dhaka"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="employment_type" className="text-sm font-medium text-gray-700">
-              Employment Type
-            </label>
-            <select
-              id="employment_type"
-              name="employment_type"
-              value={form.employment_type}
-              onChange={handleChange}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              {EMPLOYMENT_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Input
-            label="Minimum Experience (years)"
-            name="min_experience_years"
-            type="number"
-            min="0"
-            max="50"
-            value={form.min_experience_years}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Input
-            label="Application Deadline"
-            name="application_deadline"
-            type="date"
-            value={form.application_deadline}
-            onChange={handleChange}
-          />
+        {!isEdit && (
           <p className="text-xs text-gray-500">
-            Applications are accepted until 11:59 PM on this date. If left empty, it is set to 21
-            days after posting.
+            Department, location, employment type, experience and deadline are set from your
+            request in the JD Assistant.
           </p>
-        </div>
+        )}
+        {showDeadline && (
+          <div className="flex flex-col gap-1">
+            <Input
+              label="Application Deadline"
+              name="application_deadline"
+              type="date"
+              value={form.application_deadline}
+              onChange={handleChange}
+            />
+            <p className="text-xs text-gray-500">
+              Applications are accepted until 11:59 PM on this date. Extending it reopens the
+              application form.
+            </p>
+          </div>
+        )}
       </form>
     </Modal>
   );
