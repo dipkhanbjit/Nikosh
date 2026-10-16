@@ -4,18 +4,20 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { generateJD, getJD, getJob, reviewJD } from "../api/jobs";
 import ChatPanel from "../components/ChatPanel";
 import MarkdownView from "../components/MarkdownView";
+import JobProfileEditor from "../components/JobProfileEditor";
 import RequirementsEditor from "../components/RequirementsEditor";
 import { Alert, Badge, Button, Card, PageHeader, Spinner, Textarea } from "../components/ui";
+import { formToProfile, profileToForm } from "../utils/jobProfile";
 
 const STATUS_INFO = {
   not_started: {
     badge: ["gray", "Not started"],
-    hint: "Describe the role in the chat. The assistant drafts the JD from company documents.",
-    placeholder: "e.g. Senior backend engineer for our fintech APIs, hybrid in Dhaka…",
+    hint: "Describe the role in the chat, including department, location, employment type, experience and deadline if known. The assistant drafts the JD from company documents.",
+    placeholder: "e.g. Senior backend engineer in Engineering, full-time in Dhaka, 5+ years, apply by 30 Nov…",
   },
   awaiting_review: {
     badge: ["yellow", "Awaiting review"],
-    hint: "Review the draft. Send feedback in the chat to refine it, or edit it directly and approve.",
+    hint: "Review the draft and job profile. Send feedback in the chat to refine them, or edit them directly and approve.",
     placeholder: "e.g. Make it shorter and add Kafka as a preferred skill…",
   },
   approved: {
@@ -37,11 +39,13 @@ export default function JDAssistant() {
   const [editMode, setEditMode] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [draftReqs, setDraftReqs] = useState([]);
+  const [draftProfile, setDraftProfile] = useState(profileToForm(null));
 
   const applyState = (state) => {
     setJd(state);
     setDraftText(state.description ?? "");
     setDraftReqs(state.requirements ?? []);
+    setDraftProfile(profileToForm(state.profile));
     setEditMode(false);
   };
 
@@ -76,7 +80,12 @@ export default function JDAssistant() {
     setApproving(true);
     setError("");
     try {
-      await reviewJD(id, { action: "approve", description: draftText, requirements: draftReqs });
+      await reviewJD(id, {
+        action: "approve",
+        description: draftText,
+        requirements: draftReqs,
+        profile: formToProfile(draftProfile),
+      });
       navigate(`/jobs/${id}`);
     } catch (err) {
       setError(err.message);
@@ -165,6 +174,10 @@ export default function JDAssistant() {
                 <MarkdownView content={draftText} />
               </div>
             )}
+          </Card>
+
+          <Card title="Job Profile">
+            <JobProfileEditor form={draftProfile} onChange={setDraftProfile} editable={reviewing} />
           </Card>
 
           <Card title="Requirements">

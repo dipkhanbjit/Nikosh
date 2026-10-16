@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.exceptions import AppException
 from app.models import Job
 from app.schemas.jd import JDGenerateRequest, JDReviewRequest, JDState
+from app.services.deadlines import DHAKA, today
 from app.workflows.checkpointer import get_checkpointer
 from app.workflows.jd_generation import get_jd_graph
 
@@ -33,15 +34,19 @@ def _get_job(db: Session, job_id: int) -> Job:
 
 
 def _job_profile(job: Job) -> str:
-    lines = [f"Title: {job.title}"]
-    if job.department:
-        lines.append(f"Department: {job.department}")
-    if job.location:
-        lines.append(f"Location: {job.location}")
-    lines.append(f"Employment type: {job.employment_type}")
-    if job.min_experience_years is not None:
-        lines.append(f"Minimum experience: {job.min_experience_years} years")
-    return "\n".join(lines)
+    return f"Title: {job.title}"
+
+
+def _saved_profile(job: Job) -> dict:
+    """The job's saved profile fields, in the same shape as the workflow state."""
+    deadline = job.application_deadline
+    return {
+        "department": job.department,
+        "location": job.location,
+        "employment_type": job.employment_type,
+        "min_experience_years": job.min_experience_years,
+        "application_deadline": deadline.astimezone(DHAKA).date().isoformat() if deadline else None,
+    }
 
 
 def _current_state(job: Job) -> JDState:
@@ -49,12 +54,18 @@ def _current_state(job: Job) -> JDState:
     values = snapshot.values
     if not values:
         status = "approved" if job.description else "not_started"
-        return JDState(status=status, description=job.description, requirements=job.requirements)
+        return JDState(
+            status=status,
+            description=job.description,
+            requirements=job.requirements,
+            profile=_saved_profile(job),
+        )
     status = "awaiting_review" if "review" in snapshot.next else "approved"
     return JDState(
         status=status,
         description=values.get("description"),
         requirements=values.get("requirements", []),
+        profile=values.get("profile") or _saved_profile(job),
         messages=values.get("messages", []),
     )
 
@@ -84,6 +95,7 @@ def generate_jd(job_id: int, payload: JDGenerateRequest, db: Session = Depends(g
         "job_profile": _job_profile(job),
         "prompt": payload.prompt,
         "description": job.description,
+        "profile": _saved_profile(job) if job.description else None,  # keep it when revising
         "feedback": payload.prompt if job.description else None,
         "messages": [{"role": "user", "content": payload.prompt}],
     })
@@ -97,7 +109,13 @@ def review_jd(job_id: int, payload: JDReviewRequest, db: Session = Depends(get_d
         raise AppException("No draft is waiting for review", 409, "NO_PENDING_DRAFT")
     if payload.action == "refine" and not payload.feedback:
         raise AppException("Feedback is required to refine", 422, "FEEDBACK_REQUIRED")
+    deadline = payload.profile and payload.profile.application_deadline
+    if deadline and deadline < today():
+        raise AppException("The application deadline must be today or later", 422, "INVALID_DEADLINE")
 
-    _run(job_id, Command(resume=payload.model_dump(exclude_none=True)))
+    resume = payload.model_dump(mode="json", exclude_none=True)
+    if payload.profile:
+        resume["profile"] = payload.profile.model_dump(mode="json")  # keep cleared fields as null
+    _run(job_id, Command(resume=resume))
     db.refresh(job)
     return _current_state(job)
