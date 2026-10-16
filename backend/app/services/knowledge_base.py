@@ -84,6 +84,7 @@ def search(db: Session, query: str, k: int = 5, kind: str | None = None) -> list
     rows = db.execute(stmt.order_by(distance).limit(k)).all()
     return [
         {
+            "id": chunk.id,
             "content": chunk.content,
             "source": filename,
             "kind": doc_kind,
