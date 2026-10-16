@@ -158,7 +158,7 @@ export default function InterviewerRoom() {
             End interview
           </Button>
         }
-        leftPanel={{ title: "Interview tools", content: <InterviewerPanel candidateId={interview.candidate_id} /> }}
+        leftPanel={{ title: "Interview tools", content: <InterviewerPanel interviewId={interview.id} candidateId={interview.candidate_id} /> }}
         chat={{
           open: chatOpen,
           onToggle: () => setChatOpen(!chatOpen),

@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -47,5 +48,7 @@ class Interview(TimestampMixin, Base):
     invitation_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # .ics SEQUENCE: raised on every invitation / cancellation so calendars apply the update
     invitation_sequence: Mapped[int] = mapped_column(Integer, server_default=text("0"), default=0)
+    # Co-pilot suggested questions: {"questions": [...], "generated_at": iso}; regenerate replaces it
+    suggested_questions: Mapped[dict | None] = mapped_column(JSONB)
 
     candidate: Mapped["Candidate"] = relationship(back_populates="interviews")
