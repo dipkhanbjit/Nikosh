@@ -44,3 +44,6 @@ export const reportUrl = (id, { download = false, print = false } = {}) => {
   const query = params.toString();
   return `/api/v1/candidates/${id}/report.html${query ? `?${query}` : ""}`;
 };
+
+export const getDecision = (id) => apiRequest(`/candidates/${id}/decision`);
+export const saveDecision = (id, body) => apiRequest(`/candidates/${id}/decision`, { method: "PUT", body });

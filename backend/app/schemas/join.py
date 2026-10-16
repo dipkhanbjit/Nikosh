@@ -24,6 +24,8 @@ class MyInterview(BaseModel):
     duration_minutes: int
     status: str
     join_url: str
+    decision: str | None = None  # selected / not_selected, only once the candidate was notified
+    decision_message: str | None = None
 
 
 class RoomInfo(BaseModel):

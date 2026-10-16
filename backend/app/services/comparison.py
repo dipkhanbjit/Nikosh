@@ -37,6 +37,7 @@ def comparison_row(row: dict) -> dict:
         "conflicts": sum(1 for r in requirements if r.get("conflict")),
         "unsupported": sum(1 for item in flagged if item.get("unsupported")),
         "outdated": bool(row.get("outdated")),
+        "decision": row.get("decision"),
         "assessed_at": row.get("finished_at"),
     }
 
@@ -71,6 +72,7 @@ def job_comparison(db: Session, job: Job) -> dict:
             "findings": assessment.findings,
             "outdated": is_outdated(assessment, latest_interview_analysis(db, candidate.id)[1]),
             "finished_at": assessment.finished_at,
+            "decision": candidate.decision,
         }
         for candidate, assessment in pairs
     ]

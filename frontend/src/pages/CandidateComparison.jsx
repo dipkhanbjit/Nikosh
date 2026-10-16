@@ -11,6 +11,7 @@ const RECOMMENDATION = {
   consider: ["yellow", "Consider with reservations"],
   do_not_recommend: ["red", "Do not recommend"],
 };
+const DECISION = { selected: ["green", "Selected"], not_selected: ["red", "Not selected"] };
 const STATUS = { met: ["green", "Met"], partial: ["yellow", "Partial"], unmet: ["red", "Unmet"] };
 const SHOW_OPTIONS = [
   { value: "3", label: "Top 3" },
@@ -128,6 +129,7 @@ export default function CandidateComparison() {
       label: "Conflicts",
       render: (c) => (c.conflicts > 0 ? <Badge color="red">{c.conflicts}</Badge> : "—"),
     },
+    { key: "decision", label: "Decision", render: (c) => <StatusBadge map={DECISION} value={c.decision} /> },
     {
       key: "actions",
       label: "",

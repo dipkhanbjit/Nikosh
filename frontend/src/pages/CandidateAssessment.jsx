@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import { getAssessment, reportUrl, runAssessment } from "../api/candidates";
 import { formatClock, formatDateTime, getInterview } from "../api/interviews";
+import HiringDecisionCard from "../components/HiringDecisionCard";
 import { Alert, Badge, Button, Card, Modal, PageHeader, Spinner, Table } from "../components/ui";
 
 const ASSESSMENT_STATUS = {
@@ -417,6 +418,8 @@ export default function CandidateAssessment() {
           <FindingsCard title="Gaps" items={findings.gaps} interviewId={assessment.interview_id} />
         </>
       )}
+
+      <HiringDecisionCard candidateId={id} recommendation={assessment?.score?.recommendation} assessed={hasResult} />
 
       <Modal
         open={confirmOpen}

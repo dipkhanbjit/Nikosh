@@ -8,10 +8,10 @@ from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_role
+from app.api.deps import get_current_user, require_role
 from app.core.database import SessionLocal, get_db
 from app.core.exceptions import AppException
-from app.models import Candidate, DeletedApplication, Interview, InterviewAnalysis, Job
+from app.models import Candidate, DeletedApplication, Interview, InterviewAnalysis, Job, User
 from app.schemas.candidate import (
     CandidateOut,
     CandidateText,
@@ -22,6 +22,7 @@ from app.schemas.candidate import (
 )
 from app.schemas.candidate_assessment import CandidateAssessmentOut
 from app.schemas.comparison import JobComparisonOut
+from app.schemas.decision import DecisionOut, DecisionRequest
 from app.services.candidate_assessments import (
     execute_assessment,
     get_assessment,
@@ -31,6 +32,7 @@ from app.services.candidate_assessments import (
 )
 from app.services.candidate_scoring import score_candidate
 from app.services.comparison import job_comparison
+from app.services.decisions import can_decide, decided_by_name, interview_statuses, save_decision
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
 from app.services.audio_recorder import delete_interview_audio
@@ -264,6 +266,43 @@ def get_candidate_report(candidate_id: int, download: bool = False,
         headers["Content-Disposition"] = f'attachment; filename="{report_filename(candidate.full_name, generated_at)}"'
     logger.info("Assessment report generated for candidate %s (download=%s)", candidate.id, download)
     return HTMLResponse(html, headers=headers)
+
+
+# --- Hiring decision (8.6.3): the interviewer's call, optionally sent to the candidate
+
+
+def _decision_out(db: Session, candidate: Candidate) -> DecisionOut:
+    return DecisionOut(
+        candidate_id=candidate.id,
+        full_name=candidate.full_name,
+        cv_filename=candidate.cv_filename,
+        source=candidate.source,
+        decision=candidate.decision,
+        decision_note=candidate.decision_note,
+        decision_message=candidate.decision_message,
+        decided_at=candidate.decided_at,
+        decided_by_name=decided_by_name(db, candidate),
+        decision_notified_at=candidate.decision_notified_at,
+        decision_email_status=candidate.decision_email_status,
+        decision_email_error=candidate.decision_email_error,
+        can_decide=can_decide(interview_statuses(db, candidate.id)),
+        contact_email=candidate.email,
+    )
+
+
+@router.get("/{candidate_id}/decision", response_model=DecisionOut)
+def get_candidate_decision(candidate_id: int, db: Session = Depends(get_db)):
+    return _decision_out(db, _get_candidate(db, candidate_id))
+
+
+@router.put("/{candidate_id}/decision", response_model=DecisionOut)
+def set_candidate_decision(candidate_id: int, payload: DecisionRequest, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """Save (or change) the decision; with notify, also email it and show it on the candidate's home.
+    A failed email is reported in decision_email_status / decision_email_error, the decision stays."""
+    candidate = _get_candidate(db, candidate_id)
+    save_decision(db, candidate, user, payload.decision, payload.note, payload.notify, payload.message)
+    return _decision_out(db, candidate)
 
 
 @router.delete("/{candidate_id}", status_code=204)

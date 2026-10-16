@@ -21,6 +21,7 @@ import CredentialsModal from "../components/CredentialsModal";
 import ScheduleAssistant from "../components/ScheduleAssistant";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Spinner, Table, Textarea } from "../components/ui";
 
+const DECISION = { selected: ["green", "Selected"], not_selected: ["red", "Not selected"] };
 const DEFAULT_TOP_N = 5;
 const MAX_TOP_N = 50; // backend limit
 const DEFAULT_DURATION = 30;
@@ -268,6 +269,15 @@ export default function Candidates() {
             <p className="mt-1 text-xs text-gray-500">{formatDateTime(iv.scheduled_at)}</p>
           </div>
         );
+      },
+    },
+    {
+      key: "decision",
+      label: "Decision",
+      render: (i) => {
+        const decision = candidates.find((c) => c.id === i.candidate_id)?.decision;
+        const [color, label] = DECISION[decision] ?? ["gray", "—"];
+        return decision ? <Badge color={color}>{label}</Badge> : <span className="text-gray-400">—</span>;
       },
     },
     {

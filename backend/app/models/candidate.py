@@ -56,6 +56,15 @@ class Candidate(TimestampMixin, Base):
     override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     shortlisted: Mapped[bool] = mapped_column(default=False, server_default="false")
     shortlisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Hiring decision (8.6.3): the interviewer's call, separate from the AI recommendation
+    decision: Mapped[str | None] = mapped_column(String(20))  # selected / not_selected
+    decision_note: Mapped[str | None] = mapped_column(Text)  # internal, never shown to the candidate
+    decision_message: Mapped[str | None] = mapped_column(Text)  # to the candidate, when notified
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decision_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_email_status: Mapped[str | None] = mapped_column(String(20))  # sent / failed
+    decision_email_error: Mapped[str | None] = mapped_column(String(500))
 
     job: Mapped["Job"] = relationship(back_populates="candidates")
     interviews: Mapped[list["Interview"]] = relationship(

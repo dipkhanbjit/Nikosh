@@ -16,6 +16,7 @@ import {
 } from "../api/candidates";
 import { formatDeadline, getScoreWeights } from "../api/jobs";
 import CandidateProfileModal from "./CandidateProfileModal";
+import DeleteCandidateModal from "./DeleteCandidateModal";
 import { Alert, Badge, Button, Card, Modal, Table } from "./ui";
 
 const POLL_INTERVAL_MS = 30000;
@@ -457,7 +458,6 @@ export default function CandidatesCard({ job }) {
 
   const including = moving?.action === "include";
   const reasonValid = reason.trim().length >= MIN_REASON_LENGTH;
-  const deletingFromForm = deleting?.source === "form";
 
   return (
     <Card
@@ -565,59 +565,12 @@ export default function CandidatesCard({ job }) {
         </div>
       </Modal>
 
-      <Modal
-        open={Boolean(deleting)}
-        title="Delete Candidate"
-        onClose={() => setDeleting(null)}
-        footer={
-          deletingFromForm ? (
-            <>
-              <Button variant="secondary" onClick={() => setDeleting(null)} disabled={deletingBusy}>
-                Cancel
-              </Button>
-              <Button variant="secondary" onClick={() => handleDelete(false)} disabled={deletingBusy}>
-                No, only from Nikosh
-              </Button>
-              <Button variant="danger" onClick={() => handleDelete(true)} loading={deletingBusy}>
-                Yes, delete from Drive
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="secondary" onClick={() => setDeleting(null)} disabled={deletingBusy}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={() => handleDelete(false)} loading={deletingBusy}>
-                Delete
-              </Button>
-            </>
-          )
-        }
-      >
-        {deletingFromForm ? (
-          <div className="flex flex-col gap-2 text-sm text-gray-700">
-            <p>
-              Delete <span className="font-semibold">{displayName(deleting)}</span>? Do you also want to delete
-              their CV from Google Drive?
-            </p>
-            <ul className="list-disc space-y-1 pl-5 text-gray-600">
-              <li>
-                <span className="font-medium">Yes:</span> the CV is removed from Drive and will never be imported
-                again.
-              </li>
-              <li>
-                <span className="font-medium">No:</span> removed from Nikosh only; it will be imported again on the
-                next sync.
-              </li>
-            </ul>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-700">
-            Delete <span className="font-semibold">{displayName(deleting)}</span>? Their record and CV file will be
-            permanently removed.
-          </p>
-        )}
-      </Modal>
+      <DeleteCandidateModal
+        candidate={deleting}
+        busy={deletingBusy}
+        onCancel={() => setDeleting(null)}
+        onDelete={handleDelete}
+      />
     </Card>
   );
 }

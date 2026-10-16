@@ -28,6 +28,7 @@ class ComparisonCandidate(BaseModel):
     conflicts: int
     unsupported: int
     outdated: bool
+    decision: str | None = None
     assessed_at: datetime | None
 
 
