@@ -52,7 +52,19 @@ export default function InterviewTranscript() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Interview transcript" actions={back} />
+      <PageHeader
+        title="Interview transcript"
+        actions={
+          <>
+            {data.status === "completed" && (
+              <Button variant="secondary" onClick={() => navigate(`/interviews/${id}/analysis`)}>
+                View analysis
+              </Button>
+            )}
+            {back}
+          </>
+        }
+      />
 
       <Card>
         <dl className="grid grid-cols-2 gap-4 md:grid-cols-4">
