@@ -13,6 +13,11 @@ class RequirementMappingItem(BaseModel):
         description="pair_ids of the answers that support this requirement; empty when not_covered",
     )
     justification: str = Field(description="One or two short sentences explaining the coverage")
+    follow_up_question: str = Field(
+        "",
+        description="One short follow-up question about what the candidate did not show; "
+        "only for partial or not_covered, empty when demonstrated",
+    )
 
 
 class RequirementMappingResult(BaseModel):

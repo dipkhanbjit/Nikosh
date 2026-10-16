@@ -3,7 +3,7 @@
 import unittest
 
 from app.schemas.requirement_mapping import RequirementMappingItem, RequirementMappingResult
-from app.services.requirement_mapping import _build_mapping, _prompt
+from app.services.requirement_mapping import SYSTEM_PROMPT, _build_mapping, _prompt, summarize_gaps
 
 REQUIREMENTS = [
     {"text": "3+ years of Python", "category": "experience"},
@@ -21,10 +21,11 @@ def pair(pair_id, answered=True, parent_id=None):
     }
 
 
-def item(requirement_id, coverage="demonstrated", support=(1,)):
+def item(requirement_id, coverage="demonstrated", support=(1,), follow_up=""):
     return RequirementMappingItem(
         requirement_id=requirement_id, coverage=coverage,
         supporting_pairs=list(support), justification=" Clear example. ",
+        follow_up_question=follow_up,
     )
 
 
@@ -79,6 +80,55 @@ class BuildMappingTest(unittest.TestCase):
     def test_no_requirements(self):
         self.assertEqual(self.build([item(1)], [pair(1)], requirements=[]), [])
 
+    def test_follow_up_cleared_on_demonstrated(self):
+        m = self.build([item(1, follow_up="Why?"), item(2)], [pair(1)])
+        self.assertEqual(m[0]["follow_up_question"], "")
+
+    def test_follow_up_kept_on_partial_and_not_covered(self):
+        m = self.build([item(1, "partial", follow_up=" How did you test it? "),
+                        item(2, "not_covered", (), "Have you designed a REST API?")], [pair(1)])
+        self.assertEqual(m[0]["follow_up_question"], "How did you test it?")
+        self.assertEqual(m[1]["follow_up_question"], "Have you designed a REST API?")
+
+    def test_empty_follow_up_stays_empty(self):
+        m = self.build([item(1, "partial"), item(2, "not_covered", ())], [pair(1)])
+        self.assertEqual([x["follow_up_question"] for x in m], ["", ""])
+
+    def test_follow_up_kept_after_downgrade(self):
+        # Demonstrated with no valid support becomes not_covered, so the follow-up stays.
+        m = self.build([item(1, support=(9,), follow_up="Give an example?"), item(2)], [pair(1)])
+        self.assertEqual((m[0]["coverage"], m[0]["follow_up_question"]), ("not_covered", "Give an example?"))
+
+    def test_follow_up_empty_when_not_mapped_or_no_answers(self):
+        m = self.build([item(1)], [pair(1)])
+        self.assertEqual(m[1]["follow_up_question"], "")
+        m = _build_mapping(None, REQUIREMENTS, [pair(1, answered=False)])
+        self.assertEqual([x["follow_up_question"] for x in m], ["", ""])
+
+
+class SummarizeGapsTest(unittest.TestCase):
+    def test_counts_and_lists(self):
+        requirements = REQUIREMENTS + [{"text": "Docker"}, {"text": "SQL"}, {"text": "Git"}]
+        m = _build_mapping(RequirementMappingResult(mappings=[
+            item(1), item(2, "partial", follow_up="Which status codes?"),
+            item(3, "not_covered", (), "Used Docker?"), item(4, "not_covered", ()),
+        ]), requirements, [pair(1)])
+        gaps = summarize_gaps(m)
+        self.assertEqual(gaps["counts"], {"demonstrated": 1, "partial": 1, "not_covered": 2, "not_mapped": 1})
+        self.assertEqual(gaps["partial"], [
+            {"requirement_id": 2, "text": "REST API design", "follow_up_question": "Which status codes?"},
+        ])
+        self.assertEqual(gaps["not_covered"], [
+            {"requirement_id": 3, "text": "Docker", "follow_up_question": "Used Docker?"},
+            {"requirement_id": 4, "text": "SQL", "follow_up_question": ""},
+        ])
+
+    def test_empty_mapping(self):
+        self.assertEqual(summarize_gaps([]), {
+            "counts": {"demonstrated": 0, "partial": 0, "not_covered": 0, "not_mapped": 0},
+            "not_covered": [], "partial": [],
+        })
+
 
 class PromptTest(unittest.TestCase):
     def test_prompt_numbers_requirements_and_shows_scores(self):
@@ -95,6 +145,10 @@ class PromptTest(unittest.TestCase):
         self.assertIn("Follow-up to: Question 1?", text)
         self.assertIn("Evaluation: 75% (accuracy: supported)", text)
         self.assertIn("Evaluation: none", text)
+
+    def test_system_prompt_asks_for_follow_up(self):
+        self.assertIn("follow-up question", SYSTEM_PROMPT)
+        self.assertIn("Leave it empty for demonstrated", SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":
