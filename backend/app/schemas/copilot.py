@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -30,3 +31,37 @@ class CopilotReply(BaseModel):
     source_ids: list[str] = Field(default_factory=list, description="Passage labels used, e.g. S1, S2")
     used_cv: bool = Field(default=False, description="True if the answer used the candidate CV")
     used_job: bool = Field(default=False, description="True if the answer used the job requirements")
+
+
+class SuggestedQuestion(BaseModel):
+    """One suggested question in the LLM output."""
+
+    requirement_no: int = Field(description="Number of the job requirement this question targets")
+    question: str = Field(description="The question the interviewer can ask")
+    key_points: list[str] = Field(description="3-5 short key points of a good answer")
+    cv_probe: str | None = Field(default=None, description="Optional: what to probe in this candidate's CV")
+    source_ids: list[str] = Field(default_factory=list, description="Passage labels used, e.g. S1, S2")
+
+
+class SuggestedQuestionsReply(BaseModel):
+    """Structured output of the suggested-questions LLM call."""
+
+    questions: list[SuggestedQuestion]
+
+
+class QuestionRequirement(BaseModel):
+    category: str | None = None
+    text: str
+
+
+class SuggestedQuestionOut(BaseModel):
+    requirement: QuestionRequirement
+    question: str
+    key_points: list[str]
+    cv_probe: str | None = None
+    sources: list[str]
+
+
+class SuggestedQuestionsResponse(BaseModel):
+    questions: list[SuggestedQuestionOut]
+    generated_at: datetime | None = None
