@@ -14,6 +14,7 @@ class KBDocument(TimestampMixin, Base):
     filename: Mapped[str] = mapped_column(String(255))
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     chunk_count: Mapped[int] = mapped_column(default=0)
+    kind: Mapped[str] = mapped_column(String(20), server_default="company")
     uploaded_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

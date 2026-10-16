@@ -51,7 +51,9 @@ COMPANY_QUERY = "company profile, compensation, benefits, leave and work policy"
 def retrieve(state: JDGraphState) -> dict:
     role_query = f"{state['job_profile']}\n{state['prompt']}"
     with SessionLocal() as db:
-        chunks = search(db, role_query, k=5) + search(db, COMPANY_QUERY, k=3)
+        chunks = search(db, role_query, k=5, kind="company") + search(
+            db, COMPANY_QUERY, k=3, kind="company"
+        )
 
     seen, unique = set(), []
     for c in chunks:
