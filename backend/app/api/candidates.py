@@ -21,6 +21,7 @@ from app.schemas.candidate import (
     ScreeningRunOut,
 )
 from app.schemas.candidate_assessment import CandidateAssessmentOut
+from app.schemas.comparison import JobComparisonOut
 from app.services.candidate_assessments import (
     execute_assessment,
     get_assessment,
@@ -29,6 +30,7 @@ from app.services.candidate_assessments import (
     start_assessment,
 )
 from app.services.candidate_scoring import score_candidate
+from app.services.comparison import job_comparison
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
 from app.services.audio_recorder import delete_interview_audio
@@ -99,6 +101,12 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
         raise AppException(f"Upload at most {MAX_FILES_PER_UPLOAD} files at once", 400, "TOO_MANY_FILES")
     results = [add_uploaded_cv(db, job, f.filename, f.file.read()) for f in files]
     return ImportSummary.from_results(results)
+
+
+@job_router.get("/comparison", response_model=JobComparisonOut)
+def get_job_comparison(job_id: int, db: Session = Depends(get_db)):
+    """Candidates of the job with a completed assessment, side by side (8.6.2); best final score first."""
+    return job_comparison(db, _get_job(db, job_id))
 
 
 @job_router.post("/screening", response_model=ScreeningRunOut, status_code=202)

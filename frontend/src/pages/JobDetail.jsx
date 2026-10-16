@@ -69,6 +69,9 @@ export default function JobDetail() {
         subtitle={[job.department, job.location].filter(Boolean).join(" · ")}
         actions={
           <>
+            <Button variant="secondary" onClick={() => navigate(`/jobs/${job.id}/comparison`)}>
+              Compare candidates
+            </Button>
             <Button variant="secondary" onClick={() => setEditOpen(true)}>
               Edit Profile
             </Button>

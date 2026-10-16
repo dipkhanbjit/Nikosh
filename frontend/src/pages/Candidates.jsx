@@ -329,6 +329,10 @@ export default function Candidates() {
             </select>
           </div>
 
+          <Button variant="secondary" onClick={() => navigate(`/jobs/${jobId}/comparison`)} disabled={!jobId}>
+            Compare
+          </Button>
+
           {shortlist && (
             <>
               <div className="w-28">
