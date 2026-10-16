@@ -21,6 +21,7 @@ import CredentialsModal from "../components/CredentialsModal";
 import ScheduleAssistant from "../components/ScheduleAssistant";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Spinner, Table, Textarea } from "../components/ui";
 
+const DECISION = { selected: ["green", "Selected"], not_selected: ["red", "Not selected"] };
 const DEFAULT_TOP_N = 5;
 const MAX_TOP_N = 50; // backend limit
 const DEFAULT_DURATION = 30;
@@ -271,6 +272,15 @@ export default function Candidates() {
       },
     },
     {
+      key: "decision",
+      label: "Decision",
+      render: (i) => {
+        const decision = candidates.find((c) => c.id === i.candidate_id)?.decision;
+        const [color, label] = DECISION[decision] ?? ["gray", "—"];
+        return decision ? <Badge color={color}>{label}</Badge> : <span className="text-gray-400">—</span>;
+      },
+    },
+    {
       key: "actions",
       label: "",
       render: (i) => {
@@ -328,6 +338,10 @@ export default function Candidates() {
               ))}
             </select>
           </div>
+
+          <Button variant="secondary" onClick={() => navigate(`/jobs/${jobId}/comparison`)} disabled={!jobId}>
+            Compare
+          </Button>
 
           {shortlist && (
             <>

@@ -8,6 +8,22 @@ import { Alert, Badge, Button, Card, Spinner, Table } from "../components/ui";
 import { clearUser, getUser } from "../utils/auth";
 
 const JOINABLE = ["scheduled", "in_progress"];
+const OUTCOME = { selected: ["green", "Selected"], not_selected: ["gray", "Not selected"] };
+
+function Outcome({ iv }) {
+  if (!iv.decision) {
+    return <p className="max-w-[16rem] text-sm text-gray-600">Thank you for attending. The hiring team will contact you.</p>;
+  }
+  const [color, label] = OUTCOME[iv.decision] ?? ["gray", iv.decision];
+  return (
+    <div className="flex max-w-[20rem] flex-col items-start gap-1">
+      <Badge color={color}>{label}</Badge>
+      {iv.decision_message && (
+        <p className="whitespace-pre-line text-sm text-gray-700">{iv.decision_message}</p>
+      )}
+    </div>
+  );
+}
 
 export default function CandidateHome() {
   const navigate = useNavigate();
@@ -47,9 +63,7 @@ export default function CandidateHome() {
       label: "",
       render: (iv) =>
         iv.status === "completed" ? (
-          <p className="max-w-[16rem] text-sm text-gray-600">
-            Thank you for attending. The hiring team will contact you.
-          </p>
+          <Outcome iv={iv} />
         ) : (
           <div className="flex justify-end">
             <Button

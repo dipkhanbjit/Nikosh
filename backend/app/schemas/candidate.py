@@ -19,6 +19,7 @@ class CandidateOut(BaseModel):
     override: str | None = None
     override_reason: str | None = None
     overall_score: float | None = None
+    decision: str | None = None  # selected / not_selected (8.6.3)
     scoring_status: str = "pending"
     scoring_error: str | None = None
     rank: int | None = None

@@ -3,15 +3,15 @@ import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_role
+from app.api.deps import get_current_user, require_role
 from app.core.database import SessionLocal, get_db
 from app.core.exceptions import AppException
-from app.models import Candidate, DeletedApplication, Job
+from app.models import Candidate, DeletedApplication, Interview, InterviewAnalysis, Job, User
 from app.schemas.candidate import (
     CandidateOut,
     CandidateText,
@@ -21,6 +21,8 @@ from app.schemas.candidate import (
     ScreeningRunOut,
 )
 from app.schemas.candidate_assessment import CandidateAssessmentOut
+from app.schemas.comparison import JobComparisonOut
+from app.schemas.decision import DecisionOut, DecisionRequest
 from app.services.candidate_assessments import (
     execute_assessment,
     get_assessment,
@@ -29,12 +31,15 @@ from app.services.candidate_assessments import (
     start_assessment,
 )
 from app.services.candidate_scoring import score_candidate
+from app.services.comparison import job_comparison
+from app.services.decisions import can_decide, decided_by_name, interview_statuses, save_decision
 from app.services.cv_intake import add_uploaded_cv, new_applications, sync_applications
 from app.services.deadlines import applications_closed, deadline_label
 from app.services.audio_recorder import delete_interview_audio
 from app.services.interview_chat import delete_interview_files
 from app.services.mcp_client import MCPToolError, call_tool
 from app.services.ranking import ranked_candidates
+from app.services.report import render_report, report_filename
 from app.services.screening_runs import execute_run, latest_run, start_screening
 from app.services.storage import delete_file
 
@@ -98,6 +103,12 @@ def upload_cvs(job_id: int, files: list[UploadFile] = File(...), db: Session = D
         raise AppException(f"Upload at most {MAX_FILES_PER_UPLOAD} files at once", 400, "TOO_MANY_FILES")
     results = [add_uploaded_cv(db, job, f.filename, f.file.read()) for f in files]
     return ImportSummary.from_results(results)
+
+
+@job_router.get("/comparison", response_model=JobComparisonOut)
+def get_job_comparison(job_id: int, db: Session = Depends(get_db)):
+    """Candidates of the job with a completed assessment, side by side (8.6.2); best final score first."""
+    return job_comparison(db, _get_job(db, job_id))
 
 
 @job_router.post("/screening", response_model=ScreeningRunOut, status_code=202)
@@ -218,6 +229,80 @@ def get_candidate_assessment(candidate_id: int, db: Session = Depends(get_db)):
     if assessment is None:
         raise AppException("This candidate has not been assessed yet", 404, "ASSESSMENT_NOT_FOUND")
     return _assessment_out(db, assessment)
+
+
+@router.get("/{candidate_id}/report.html", response_class=HTMLResponse)
+def get_candidate_report(candidate_id: int, download: bool = False,
+                         print_on_load: bool = Query(False, alias="print"), db: Session = Depends(get_db)):
+    """Standalone HTML report of the completed assessment (8.6.1); the browser prints it or saves it as PDF."""
+    candidate = _get_candidate(db, candidate_id)
+    assessment = get_assessment(db, candidate.id)
+    if assessment is None:
+        raise AppException("This candidate has not been assessed yet", 404, "ASSESSMENT_NOT_FOUND")
+    if assessment.status != "completed":
+        raise AppException("The assessment has not completed", 409, "ASSESSMENT_NOT_COMPLETED")
+
+    interview = db.get(Interview, assessment.interview_id) if assessment.interview_id else None
+    analysis = None
+    if interview:
+        analysis = db.scalar(select(InterviewAnalysis).where(InterviewAnalysis.interview_id == interview.id))
+    job = db.get(Job, candidate.job_id)
+    generated_at = datetime.now(timezone.utc)
+    html = render_report(
+        candidate_name=candidate.full_name,
+        job_title=job.title if job else None,
+        interview_date=(interview.started_at or interview.scheduled_at) if interview else None,
+        generated_at=generated_at,
+        score=assessment.score or {},
+        requirements=assessment.requirements,
+        findings=assessment.findings,
+        pairs=analysis.pairs if analysis else None,
+        evaluations=analysis.evaluations if analysis else None,
+        outdated=is_outdated(assessment, latest_interview_analysis(db, candidate.id)[1]),
+        print_on_load=print_on_load,
+    )
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{report_filename(candidate.full_name, generated_at)}"'
+    logger.info("Assessment report generated for candidate %s (download=%s)", candidate.id, download)
+    return HTMLResponse(html, headers=headers)
+
+
+# --- Hiring decision (8.6.3): the interviewer's call, optionally sent to the candidate
+
+
+def _decision_out(db: Session, candidate: Candidate) -> DecisionOut:
+    return DecisionOut(
+        candidate_id=candidate.id,
+        full_name=candidate.full_name,
+        cv_filename=candidate.cv_filename,
+        source=candidate.source,
+        decision=candidate.decision,
+        decision_note=candidate.decision_note,
+        decision_message=candidate.decision_message,
+        decided_at=candidate.decided_at,
+        decided_by_name=decided_by_name(db, candidate),
+        decision_notified_at=candidate.decision_notified_at,
+        decision_email_status=candidate.decision_email_status,
+        decision_email_error=candidate.decision_email_error,
+        can_decide=can_decide(interview_statuses(db, candidate.id)),
+        contact_email=candidate.email,
+    )
+
+
+@router.get("/{candidate_id}/decision", response_model=DecisionOut)
+def get_candidate_decision(candidate_id: int, db: Session = Depends(get_db)):
+    return _decision_out(db, _get_candidate(db, candidate_id))
+
+
+@router.put("/{candidate_id}/decision", response_model=DecisionOut)
+def set_candidate_decision(candidate_id: int, payload: DecisionRequest, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """Save (or change) the decision; with notify, also email it and show it on the candidate's home.
+    A failed email is reported in decision_email_status / decision_email_error, the decision stays."""
+    candidate = _get_candidate(db, candidate_id)
+    save_decision(db, candidate, user, payload.decision, payload.note, payload.notify, payload.message)
+    return _decision_out(db, candidate)
 
 
 @router.delete("/{candidate_id}", status_code=204)

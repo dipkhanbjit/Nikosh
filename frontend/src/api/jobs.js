@@ -55,3 +55,5 @@ export const DEFAULT_SCORE_WEIGHTS = {
 export const getScoreWeights = (id) => apiRequest(`/jobs/${id}/score-weights`);
 export const updateScoreWeights = (id, weights) =>
   apiRequest(`/jobs/${id}/score-weights`, { method: "PUT", body: weights });
+
+export const getComparison = (jobId) => apiRequest(`/jobs/${jobId}/comparison`);
