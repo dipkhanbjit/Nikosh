@@ -39,7 +39,7 @@ class CandidateAssessmentOut(BaseModel):
     version: int
     score: dict | None  # final, cv, interview, weights, band, recommendation
     requirements: list | None
-    findings: dict | None  # strengths, weaknesses, gaps, recommendation
+    findings: dict | None  # strengths, weaknesses, gaps, recommendation; each with citations + unsupported
     outdated: bool = False  # the interview was re-analysed after this assessment
     created_at: datetime
     started_at: datetime | None

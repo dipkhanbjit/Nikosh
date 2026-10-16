@@ -9,10 +9,11 @@ from app.schemas.candidate_assessment import (
     ConsolidatedAssessmentResult,
 )
 from app.services.consolidated_assessment import (
+    attach_citations,
+    build_citations,
     clean_result,
     combine_requirement,
     combine_requirements,
-    evidence_ids,
     final_score,
     requirement_gaps,
 )
@@ -99,7 +100,7 @@ class CleanResultTest(unittest.TestCase):
     def setUp(self):
         self.rows = combine_requirements(SCREENING, MAPPING)
         pairs = [{"id": 2, "answered": True}, {"id": 4, "answered": True}, {"id": 5, "answered": False}]
-        self.refs = evidence_ids(self.rows, {"experience": {}}, pairs)
+        self.refs = set(build_citations(self.rows, {"experience": {}}, pairs))
 
     def test_evidence_ids(self):
         # CV-R3 has no evidence text, P5 was not answered
@@ -119,6 +120,60 @@ class CleanResultTest(unittest.TestCase):
         self.assertEqual(findings["weaknesses"], [])
         self.assertEqual(len(findings["gaps"]), 5)
         self.assertEqual(findings["recommendation"], {"text": "Consider.", "evidence_refs": ["P4"]})
+
+
+SCORES = {"experience": {"score": 70, "justification": "Four years as a backend developer.",
+                         "evidence": ["Backend developer, 2021-2025"]}}
+PAIRS = [
+    {"id": 2, "answered": True, "question": "Tell me about Python.", "answer": "x" * 300,
+     "start_s": 12.5, "end_s": 40.0, "question_turns": [3], "answer_turns": [4, 5]},
+    {"id": 5, "answered": False, "question": "Any questions?", "answer": "",
+     "start_s": 90.0, "end_s": 92.0, "question_turns": [9], "answer_turns": []},
+]
+
+
+class CitationsTest(unittest.TestCase):
+    def setUp(self):
+        self.citations = build_citations(combine_requirements(SCREENING, MAPPING), SCORES, PAIRS)
+
+    def test_cv_requirement(self):
+        self.assertEqual(self.citations["CV-R1"], {
+            "type": "cv_requirement", "ref": "CV-R1", "requirement_id": 1, "text": "Python",
+            "rating": "met", "quote": "5 years of Python"})
+        self.assertNotIn("CV-R3", self.citations)  # no CV evidence text
+
+    def test_cv_dimension(self):
+        self.assertEqual(self.citations["CV-D:experience"], {
+            "type": "cv_dimension", "ref": "CV-D:experience", "dimension": "experience", "score": 70,
+            "justification": "Four years as a backend developer.", "evidence": ["Backend developer, 2021-2025"]})
+
+    def test_interview_answer(self):
+        c = self.citations["P2"]
+        self.assertEqual((c["type"], c["pair_id"], c["question"]), ("interview_answer", 2, "Tell me about Python."))
+        self.assertEqual((c["start_s"], c["end_s"]), (12.5, 40.0))
+        self.assertEqual((c["question_turns"], c["answer_turns"]), ([3], [4, 5]))
+        self.assertEqual(c["answer_excerpt"], "x" * 200 + "...")
+
+    def test_unanswered_pair_not_citable(self):
+        self.assertNotIn("P5", self.citations)
+
+    def test_attach_and_unsupported_flag(self):
+        result = ConsolidatedAssessmentResult(
+            strengths=[AssessmentItem(text="Python", requirement_ids=[1], evidence_refs=["CV-R1", "P2"])],
+            weaknesses=[AssessmentItem(text="Unclear", evidence_refs=["P5", "P99"])],  # none valid
+            gaps=[AssessmentItem(text="Docker", requirement_ids=[2])],  # no refs at all
+            recommendation=AssessmentRecommendation(text="Consider.", evidence_refs=["X1"]),
+        )
+        findings = clean_result(result, {1, 2, 3}, set(self.citations))
+        attach_citations(findings, self.citations)
+
+        strength = findings["strengths"][0]
+        self.assertFalse(strength["unsupported"])
+        self.assertEqual([c["ref"] for c in strength["citations"]], ["CV-R1", "P2"])
+        for item in (findings["weaknesses"][0], findings["gaps"][0], findings["recommendation"]):
+            self.assertTrue(item["unsupported"])  # kept, but marked
+            self.assertEqual(item["citations"], [])
+        self.assertEqual(findings["weaknesses"][0]["text"], "Unclear")
 
 
 if __name__ == "__main__":
